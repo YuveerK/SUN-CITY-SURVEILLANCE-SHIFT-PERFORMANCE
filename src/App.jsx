@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useCSVReader } from "react-papaparse";
-import * as XLSX from "xlsx"; // Add this import
+import * as XLSX from "xlsx-js-style";
 
 const TABLE_COLUMNS = [
   "Officer",
@@ -504,24 +504,34 @@ export default function App() {
     setNewGroupRole("officer");
   }
 
-  // ========== ENHANCED EXPORT TO EXCEL FUNCTION WITH CLEAN FORMATTING ==========
+  // ========== EXPORT TO EXCEL (MATCHES YOUR SCREENSHOT STYLING) ==========
   function exportToExcel() {
     if (groups.length === 0) {
       alert("Please create at least one group with members before exporting.");
       return;
     }
 
-    // Create a new workbook
     const wb = XLSX.utils.book_new();
     const exportDate = new Date().toLocaleString();
 
-    // Helper function to add clean formatted sheet
-    const addFormattedSheet = (sheetData, sheetName, isQuarterly = false) => {
+    const TOTAL_T_COL = TABLE_COLUMNS.indexOf("Total (T)");
+    const TOTAL_COL = TABLE_COLUMNS.indexOf("Total");
+
+    const BORDER = {
+      top: { style: "thin", color: { rgb: "000000" } },
+      bottom: { style: "thin", color: { rgb: "000000" } },
+      left: { style: "thin", color: { rgb: "000000" } },
+      right: { style: "thin", color: { rgb: "000000" } },
+    };
+
+    const isAllBlankRow = (row) =>
+      !row || row.every((v) => String(v ?? "").trim() === "");
+
+    const addFormattedSheet = (sheetData, sheetName) => {
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
 
-      // Define column widths
-      const colWidths = [
-        { wch: 30 }, // Officer (wider for names)
+      ws["!cols"] = [
+        { wch: 30 }, // Officer
         { wch: 12 }, // Cashiering
         { wch: 8 }, // Count
         { wch: 12 }, // Technical
@@ -542,200 +552,158 @@ export default function App() {
         { wch: 12 }, // All Breaches
       ];
 
-      ws["!cols"] = colWidths;
+      // Find table header row
+      const headerRowIndex = sheetData.findIndex(
+        (r) => r && r[0] === "Officer" && r.length === TABLE_COLUMNS.length
+      );
+      const tableStartRow = headerRowIndex;
 
-      // Get the range of cells
-      const range = XLSX.utils.decode_range(ws["!ref"]);
+      // Find last meaningful table row
+      let tableEndRow = sheetData.length - 1;
+      while (tableEndRow >= 0 && isAllBlankRow(sheetData[tableEndRow])) {
+        tableEndRow -= 1;
+      }
 
-      // Apply formatting to all cells
-      for (let R = range.s.r; R <= range.e.r; ++R) {
-        for (let C = range.s.c; C <= range.e.c; ++C) {
-          const cell_address = { c: C, r: R };
-          const cell_ref = XLSX.utils.encode_cell(cell_address);
+      const range = XLSX.utils.decode_range(ws["!ref"] || "A1:A1");
 
-          if (!ws[cell_ref]) continue;
+      for (let R = range.s.r; R <= range.e.r; R++) {
+        // ✅ Detect totals row ONCE per row (by checking column A label)
+        const labelCellRef = XLSX.utils.encode_cell({ c: 0, r: R });
+        const rowLabel = String(ws[labelCellRef]?.v ?? "");
+        const inTable = R >= tableStartRow && R <= tableEndRow;
+        const isHeader = inTable && R === headerRowIndex;
+        const isTotalsRow = inTable && rowLabel.includes("Totals");
 
-          // Default cell style
-          let cellStyle = {
-            font: { sz: 11 },
+        for (let C = range.s.c; C <= range.e.c; C++) {
+          const cellRef = XLSX.utils.encode_cell({ c: C, r: R });
+          if (!ws[cellRef]) continue;
+
+          const value = ws[cellRef].v;
+          const isTotalColumn = C === TOTAL_T_COL || C === TOTAL_COL;
+
+          // ---- BASE STYLE
+          const style = {
+            font: { sz: 11, bold: false, color: { rgb: "000000" } },
             alignment: {
               vertical: "center",
-              horizontal: "left",
+              horizontal: C === 0 ? "left" : "center",
               wrapText: true,
-            },
-            border: {
-              top: { style: "thin", color: { rgb: "E0E0E0" } },
-              bottom: { style: "thin", color: { rgb: "E0E0E0" } },
-              left: { style: "thin", color: { rgb: "E0E0E0" } },
-              right: { style: "thin", color: { rgb: "E0E0E0" } },
             },
           };
 
-          // Determine row type based on content
-          const cellValue = ws[cell_ref].v;
-          const isHeaderRow = R <= 3; // First 3 rows are titles
-          const isColumnHeader = R === 4; // Row 4 is column headers
-          const isSubtotal =
-            typeof cellValue === "string" &&
-            cellValue.includes("Totals") &&
-            C === 0;
-          const isEmptyRow = cellValue === "" && C === 0; // Empty row for spacing
+          // Borders for whole table area
+          if (inTable) style.border = BORDER;
 
-          // Title rows (row 0-2)
-          if (R === 0) {
-            cellStyle.font = { sz: 16, bold: true, color: { rgb: "2C3E50" } };
-            cellStyle.alignment = { horizontal: "left", vertical: "center" };
-            delete cellStyle.border;
-          } else if (R === 1) {
-            cellStyle.font = { sz: 10, italic: true, color: { rgb: "7F8C8D" } };
-            cellStyle.alignment = { horizontal: "left", vertical: "center" };
-            delete cellStyle.border;
-          } else if (R === 2) {
-            cellStyle.font = { sz: 11, bold: true, color: { rgb: "34495E" } };
-            cellStyle.alignment = { horizontal: "left", vertical: "center" };
-            delete cellStyle.border;
-          }
-          // Column headers (row 4) - ONLY ONCE at the top
-          else if (isColumnHeader) {
-            cellStyle.font = { sz: 11, bold: true, color: { rgb: "FFFFFF" } };
-            cellStyle.fill = {
-              fgColor: { rgb: "2C3E50" },
-              patternType: "solid",
-            };
-            cellStyle.alignment = {
-              horizontal: "center",
+          // ---- COLUMN HEADERS (bold)
+          if (isHeader) {
+            style.font = { sz: 11, bold: true, color: { rgb: "000000" } };
+            style.fill = { fgColor: { rgb: "F2F2F2" }, patternType: "solid" };
+            style.alignment = {
               vertical: "center",
+              horizontal: "center",
               wrapText: true,
             };
           }
-          // Subtotal rows
-          else if (isSubtotal) {
-            cellStyle.font = { sz: 11, bold: true, color: { rgb: "FFFFFF" } };
-            cellStyle.fill = {
-              fgColor: { rgb: "27AE60" },
-              patternType: "solid",
-            };
-            cellStyle.alignment = {
-              horizontal: "left",
-              vertical: "center",
-            };
-          }
-          // Data rows (numeric cells)
-          else if (C > 0 && R > 4 && typeof cellValue === "number") {
-            cellStyle.alignment = { horizontal: "center", vertical: "center" };
-            cellStyle.numFmt = "0";
-          }
-          // Officer names
-          else if (
-            C === 0 &&
-            R > 4 &&
-            typeof cellValue === "string" &&
-            !isSubtotal
-          ) {
-            cellStyle.font = { sz: 11, color: { rgb: "2C3E50" } };
-            cellStyle.alignment = { horizontal: "left", vertical: "center" };
-          }
-          // Empty rows for spacing - remove borders
-          else if (isEmptyRow) {
-            delete cellStyle.border;
-            delete cellStyle.fill;
+
+          // ---- TOTAL (T) & TOTAL columns (keep as you said they're correct)
+          if (inTable && isTotalColumn && R > headerRowIndex) {
+            style.font = { ...(style.font || {}), bold: true };
+            style.fill = { fgColor: { rgb: "D9D9D9" }, patternType: "solid" };
           }
 
-          // Apply the style
-          ws[cell_ref].s = cellStyle;
+          // ---- Numeric formatting
+          if (inTable && typeof value === "number" && !isHeader) {
+            style.numFmt = "0";
+            style.alignment = { vertical: "center", horizontal: "center" };
+          }
+
+          // ---- Officer column left-aligned
+          if (inTable && C === 0 && !isHeader) {
+            style.alignment = { vertical: "center", horizontal: "left" };
+          }
+
+          // ✅ FINAL OVERRIDE: GROUP TOTALS ROW MUST BE GREY ACROSS ALL CELLS
+          if (isTotalsRow) {
+            style.font = { sz: 11, bold: true, color: { rgb: "000000" } };
+            style.fill = { fgColor: { rgb: "D9D9D9" }, patternType: "solid" };
+          }
+
+          ws[cellRef].s = style;
         }
       }
 
-      // Freeze the top 5 rows and first column (but no filters)
+      // Freeze panes
       ws["!freeze"] = {
         xSplit: 1,
-        ySplit: 5,
-        topLeftCell: "B6",
+        ySplit: Math.max(0, headerRowIndex + 1),
+        topLeftCell: XLSX.utils.encode_cell({ c: 1, r: headerRowIndex + 1 }),
         activePane: "bottomRight",
       };
 
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
     };
 
-    // 1. Create Quarterly Summary sheet (main view) - CLEAN VERSION
+    // ========== 1) QUARTER SUMMARY SHEET ==========
     const quarterlySheetData = [];
-
-    // Add header
     quarterlySheetData.push(["Quarterly Performance Summary"]);
     quarterlySheetData.push([`Exported: ${exportDate}`]);
     quarterlySheetData.push([`Period: ${quarterConfig.quarterName}`]);
-    quarterlySheetData.push([""]); // Empty row
-
-    // Add table header - ONLY ONCE
+    quarterlySheetData.push([""]);
     quarterlySheetData.push(TABLE_COLUMNS);
 
-    // Add all rows from groupedTableRows - SKIP GROUP HEADERS
     groupedTableRows.forEach((item) => {
       if (item.type === "spacer") {
-        // Add empty row for spacing
         quarterlySheetData.push(Array(TABLE_COLUMNS.length).fill(""));
       } else if (item.type === "groupHeader") {
-        // SKIP - Don't add group header row at all
         return;
       } else {
-        // Regular row or subtotal row
-        const row = TABLE_COLUMNS.map((col) => item.data[col] || "");
-        quarterlySheetData.push(row);
+        quarterlySheetData.push(
+          TABLE_COLUMNS.map((col) => item.data[col] ?? "")
+        );
       }
     });
 
     addFormattedSheet(
       quarterlySheetData,
-      `${quarterConfig.quarterName} Summary`,
-      true
+      `${quarterConfig.quarterName} Summary`
     );
 
-    // 2. Create sheets for each month - CLEAN VERSION
+    // ========== 2) MONTH SHEETS ==========
     quarterConfig.months.forEach((month) => {
-      if (datasets[month] && datasets[month].length > 0) {
-        const monthStats = new Map();
-        for (const name of people) {
-          monthStats.set(name, buildOfficerStats(datasets[month], name));
-        }
+      if (!datasets[month] || datasets[month].length === 0) return;
 
-        const monthSheetData = [];
-        monthSheetData.push([`${month} Performance Summary`]);
-        monthSheetData.push([`Exported: ${exportDate}`]);
-        monthSheetData.push([""]); // Empty row
+      const monthStats = new Map();
+      for (const name of people) {
+        monthStats.set(name, buildOfficerStats(datasets[month], name));
+      }
 
-        // Add table header - ONLY ONCE
-        monthSheetData.push(TABLE_COLUMNS);
+      const monthSheetData = [];
+      monthSheetData.push([`${month} Performance Summary`]);
+      monthSheetData.push([`Exported: ${exportDate}`]);
+      monthSheetData.push([""]);
+      monthSheetData.push(TABLE_COLUMNS);
 
-        // Add data for each group - NO GROUP HEADERS
-        groups.forEach((g) => {
-          if (g.members.length === 0) return;
+      groups.forEach((g) => {
+        if (g.members.length === 0) return;
 
-          // SKIP group header - don't add it
+        const memberRows = g.members
+          .map((name) => monthStats.get(name))
+          .filter(Boolean);
 
-          // Add member rows
-          const memberRows = g.members
-            .map((name) => monthStats.get(name))
-            .filter(Boolean);
-
-          memberRows.forEach((row) => {
-            const rowData = TABLE_COLUMNS.map((col) => row[col] || "");
-            monthSheetData.push(rowData);
-          });
-
-          // Add subtotal
-          const subtotal = sumStatsRows(memberRows, `${g.name} Totals`);
-          const subtotalRow = TABLE_COLUMNS.map((col) => subtotal[col] || "");
-          monthSheetData.push(subtotalRow);
-
-          // Add empty row for spacing between groups
-          monthSheetData.push(Array(TABLE_COLUMNS.length).fill(""));
+        memberRows.forEach((row) => {
+          monthSheetData.push(TABLE_COLUMNS.map((col) => row[col] ?? ""));
         });
 
-        addFormattedSheet(monthSheetData, month);
-      }
+        const subtotal = sumStatsRows(memberRows, `${g.name} Totals`);
+        monthSheetData.push(TABLE_COLUMNS.map((col) => subtotal[col] ?? ""));
+
+        monthSheetData.push(Array(TABLE_COLUMNS.length).fill(""));
+      });
+
+      addFormattedSheet(monthSheetData, month);
     });
 
-    // 3. Create Raw Data sheet with clean formatting (NO FILTERS)
+    // ========== 3) RAW DATA SHEET ==========
     if (quarterRows.length > 0) {
       const rawDataSheetData = [];
       rawDataSheetData.push(["Raw Data - All Months Combined"]);
@@ -743,73 +711,53 @@ export default function App() {
       rawDataSheetData.push([`Total Records: ${quarterRows.length}`]);
       rawDataSheetData.push([""]);
 
-      // Get all unique column headers from the raw data
       const allHeaders = new Set();
-      quarterRows.forEach((row) => {
-        Object.keys(row).forEach((key) => allHeaders.add(key));
-      });
+      quarterRows.forEach((row) =>
+        Object.keys(row).forEach((k) => allHeaders.add(k))
+      );
       const headers = Array.from(allHeaders);
 
       rawDataSheetData.push(headers);
-
-      // Add all data rows
       quarterRows.forEach((row) => {
-        const rowData = headers.map((header) => row[header] || "");
-        rawDataSheetData.push(rowData);
+        rawDataSheetData.push(headers.map((h) => row[h] ?? ""));
       });
 
-      // Create raw data sheet with basic formatting
       const rawWs = XLSX.utils.aoa_to_sheet(rawDataSheetData);
+      rawWs["!cols"] = headers.map(() => ({ wch: 22 }));
 
-      // Set column widths for raw data
-      const rawColWidths = headers.map(() => ({ wch: 20 }));
-      rawWs["!cols"] = rawColWidths;
+      const rawRange = XLSX.utils.decode_range(rawWs["!ref"] || "A1:A1");
+      for (let R = rawRange.s.r; R <= rawRange.e.r; R++) {
+        for (let C = rawRange.s.c; C <= rawRange.e.c; C++) {
+          const cellRef = XLSX.utils.encode_cell({ c: C, r: R });
+          if (!rawWs[cellRef]) continue;
 
-      // Apply clean formatting to raw data sheet (NO FILTERS)
-      const rawRange = XLSX.utils.decode_range(rawWs["!ref"]);
-      for (let R = 0; R <= rawRange.e.r; ++R) {
-        for (let C = 0; C <= rawRange.e.c; ++C) {
-          const cell_address = { c: C, r: R };
-          const cell_ref = XLSX.utils.encode_cell(cell_address);
-
-          if (!rawWs[cell_ref]) continue;
-
-          let cellStyle = {
-            font: { sz: 10 },
+          const style = {
+            font: { sz: 10, bold: false, color: { rgb: "000000" } },
             alignment: { vertical: "center", wrapText: true },
-            border: {
-              top: { style: "thin", color: { rgb: "E0E0E0" } },
-              bottom: { style: "thin", color: { rgb: "E0E0E0" } },
-              left: { style: "thin", color: { rgb: "E0E0E0" } },
-              right: { style: "thin", color: { rgb: "E0E0E0" } },
-            },
           };
 
-          // Title row
-          if (R === 0) {
-            cellStyle.font = { sz: 14, bold: true, color: { rgb: "2C3E50" } };
-            delete cellStyle.border;
-          }
-          // Info rows
-          else if (R === 1 || R === 2) {
-            cellStyle.font = { sz: 9, italic: true, color: { rgb: "7F8C8D" } };
-            delete cellStyle.border;
-          }
-          // Column headers
-          else if (R === 4) {
-            cellStyle.font = { sz: 10, bold: true, color: { rgb: "FFFFFF" } };
-            cellStyle.fill = {
-              fgColor: { rgb: "2C3E50" },
-              patternType: "solid",
+          if (R === 0)
+            style.font = { sz: 14, bold: true, color: { rgb: "000000" } };
+          if (R === 1 || R === 2)
+            style.font = { sz: 9, italic: true, color: { rgb: "555555" } };
+
+          if (R === 4) {
+            style.font = { sz: 10, bold: true, color: { rgb: "000000" } };
+            style.fill = { fgColor: { rgb: "F2F2F2" }, patternType: "solid" };
+            style.border = BORDER;
+            style.alignment = {
+              vertical: "center",
+              horizontal: "center",
+              wrapText: true,
             };
-            cellStyle.alignment = { horizontal: "center", vertical: "center" };
+          } else if (R > 4) {
+            style.border = BORDER;
           }
 
-          rawWs[cell_ref].s = cellStyle;
+          rawWs[cellRef].s = style;
         }
       }
 
-      // Freeze panes only (NO FILTERS)
       rawWs["!freeze"] = {
         xSplit: 0,
         ySplit: 5,
@@ -820,7 +768,6 @@ export default function App() {
       XLSX.utils.book_append_sheet(wb, rawWs, "Raw Data");
     }
 
-    // Generate Excel file
     const fileName = `Surveillance_Analytics_${
       quarterConfig.quarterName
     }_${new Date().toISOString().slice(0, 10)}.xlsx`;
