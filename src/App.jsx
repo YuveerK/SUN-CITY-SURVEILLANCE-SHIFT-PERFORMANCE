@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useCSVReader } from "react-papaparse";
+import * as XLSX from "xlsx"; // Add this import
 
 const TABLE_COLUMNS = [
   "Officer",
@@ -280,10 +281,20 @@ function ThemeToggle({ theme, toggleTheme }) {
   );
 }
 
+// Quarter configuration - can be easily changed
+const QUARTER_CONFIG = {
+  months: ["Month 1", "Month 2", "Month 3"], // Generic month names
+  quarterName: "Quarter", // Default quarter name
+};
+
 // Group shape: { id, name, role: "officer" | "manager", members: string[] }
 export default function App() {
   const { CSVReader } = useCSVReader();
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Quarter configuration state - can be customized by user
+  const [quarterConfig, setQuarterConfig] = useState(QUARTER_CONFIG);
+
   // Theme state
   const [theme, setTheme] = useState(() => {
     if (typeof window !== "undefined") {
@@ -294,8 +305,14 @@ export default function App() {
   });
 
   // Quarterly datasets + active view
-  const [datasets, setDatasets] = useState({ Jan: [], Feb: [], Mar: [] });
-  const [activeView, setActiveView] = useState("Jan"); // Jan | Feb | Mar | Q1
+  const [datasets, setDatasets] = useState(() => {
+    const initial = {};
+    quarterConfig.months.forEach((month) => {
+      initial[month] = [];
+    });
+    return initial;
+  });
+  const [activeView, setActiveView] = useState(quarterConfig.months[0]); // Month 1 | Month 2 | Month 3 | Quarter
 
   // People + grouping
   const [people, setPeople] = useState([]);
@@ -318,17 +335,15 @@ export default function App() {
     document.documentElement.className = theme;
   }, [theme]);
 
-  const quarterRows = useMemo(
-    () => [...datasets.Jan, ...datasets.Feb, ...datasets.Mar],
-    [datasets]
-  );
+  // Calculate all rows for the quarter
+  const quarterRows = useMemo(() => {
+    return quarterConfig.months.flatMap((month) => datasets[month] || []);
+  }, [datasets, quarterConfig.months]);
 
   const activeRows = useMemo(() => {
-    if (activeView === "Jan") return datasets.Jan;
-    if (activeView === "Feb") return datasets.Feb;
-    if (activeView === "Mar") return datasets.Mar;
-    return quarterRows; // Q1
-  }, [activeView, datasets, quarterRows]);
+    if (activeView === quarterConfig.quarterName) return quarterRows;
+    return datasets[activeView] || [];
+  }, [activeView, datasets, quarterRows, quarterConfig.quarterName]);
 
   const statsMap = useMemo(() => {
     const map = new Map();
@@ -441,7 +456,8 @@ export default function App() {
     setDatasets((prev) => {
       const next = { ...prev, [monthKey]: parsed };
 
-      const all = [...next.Jan, ...next.Feb, ...next.Mar];
+      // Combine all months to get unique people
+      const all = quarterConfig.months.flatMap((month) => next[month] || []);
 
       const unique = Array.from(
         new Set(
@@ -470,8 +486,13 @@ export default function App() {
   }
 
   function clearAll() {
-    setDatasets({ Jan: [], Feb: [], Mar: [] });
-    setActiveView("Jan");
+    const emptyDatasets = {};
+    quarterConfig.months.forEach((month) => {
+      emptyDatasets[month] = [];
+    });
+
+    setDatasets(emptyDatasets);
+    setActiveView(quarterConfig.months[0]);
 
     setPeople([]);
     setCheckedPeople([]);
@@ -483,17 +504,339 @@ export default function App() {
     setNewGroupRole("officer");
   }
 
+  // ========== ENHANCED EXPORT TO EXCEL FUNCTION WITH CLEAN FORMATTING ==========
+  function exportToExcel() {
+    if (groups.length === 0) {
+      alert("Please create at least one group with members before exporting.");
+      return;
+    }
+
+    // Create a new workbook
+    const wb = XLSX.utils.book_new();
+    const exportDate = new Date().toLocaleString();
+
+    // Helper function to add clean formatted sheet
+    const addFormattedSheet = (sheetData, sheetName, isQuarterly = false) => {
+      const ws = XLSX.utils.aoa_to_sheet(sheetData);
+
+      // Define column widths
+      const colWidths = [
+        { wch: 30 }, // Officer (wider for names)
+        { wch: 12 }, // Cashiering
+        { wch: 8 }, // Count
+        { wch: 12 }, // Technical
+        { wch: 12 }, // Security
+        { wch: 8 }, // MVG
+        { wch: 8 }, // Slots
+        { wch: 8 }, // AR
+        { wch: 8 }, // BJ
+        { wch: 8 }, // RPK
+        { wch: 15 }, // PB/BACCARAT
+        { wch: 15 }, // GEN (TABLES)
+        { wch: 12 }, // Total (T)
+        { wch: 10 }, // Total
+        { wch: 12 }, // Detections
+        { wch: 12 }, // Punter scans
+        { wch: 15 }, // Systems Check
+        { wch: 15 }, // Target Breaches
+        { wch: 12 }, // All Breaches
+      ];
+
+      ws["!cols"] = colWidths;
+
+      // Get the range of cells
+      const range = XLSX.utils.decode_range(ws["!ref"]);
+
+      // Apply formatting to all cells
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cell_address = { c: C, r: R };
+          const cell_ref = XLSX.utils.encode_cell(cell_address);
+
+          if (!ws[cell_ref]) continue;
+
+          // Default cell style
+          let cellStyle = {
+            font: { sz: 11 },
+            alignment: {
+              vertical: "center",
+              horizontal: "left",
+              wrapText: true,
+            },
+            border: {
+              top: { style: "thin", color: { rgb: "E0E0E0" } },
+              bottom: { style: "thin", color: { rgb: "E0E0E0" } },
+              left: { style: "thin", color: { rgb: "E0E0E0" } },
+              right: { style: "thin", color: { rgb: "E0E0E0" } },
+            },
+          };
+
+          // Determine row type based on content
+          const cellValue = ws[cell_ref].v;
+          const isHeaderRow = R <= 3; // First 3 rows are titles
+          const isColumnHeader = R === 4; // Row 4 is column headers
+          const isSubtotal =
+            typeof cellValue === "string" &&
+            cellValue.includes("Totals") &&
+            C === 0;
+          const isEmptyRow = cellValue === "" && C === 0; // Empty row for spacing
+
+          // Title rows (row 0-2)
+          if (R === 0) {
+            cellStyle.font = { sz: 16, bold: true, color: { rgb: "2C3E50" } };
+            cellStyle.alignment = { horizontal: "left", vertical: "center" };
+            delete cellStyle.border;
+          } else if (R === 1) {
+            cellStyle.font = { sz: 10, italic: true, color: { rgb: "7F8C8D" } };
+            cellStyle.alignment = { horizontal: "left", vertical: "center" };
+            delete cellStyle.border;
+          } else if (R === 2) {
+            cellStyle.font = { sz: 11, bold: true, color: { rgb: "34495E" } };
+            cellStyle.alignment = { horizontal: "left", vertical: "center" };
+            delete cellStyle.border;
+          }
+          // Column headers (row 4) - ONLY ONCE at the top
+          else if (isColumnHeader) {
+            cellStyle.font = { sz: 11, bold: true, color: { rgb: "FFFFFF" } };
+            cellStyle.fill = {
+              fgColor: { rgb: "2C3E50" },
+              patternType: "solid",
+            };
+            cellStyle.alignment = {
+              horizontal: "center",
+              vertical: "center",
+              wrapText: true,
+            };
+          }
+          // Subtotal rows
+          else if (isSubtotal) {
+            cellStyle.font = { sz: 11, bold: true, color: { rgb: "FFFFFF" } };
+            cellStyle.fill = {
+              fgColor: { rgb: "27AE60" },
+              patternType: "solid",
+            };
+            cellStyle.alignment = {
+              horizontal: "left",
+              vertical: "center",
+            };
+          }
+          // Data rows (numeric cells)
+          else if (C > 0 && R > 4 && typeof cellValue === "number") {
+            cellStyle.alignment = { horizontal: "center", vertical: "center" };
+            cellStyle.numFmt = "0";
+          }
+          // Officer names
+          else if (
+            C === 0 &&
+            R > 4 &&
+            typeof cellValue === "string" &&
+            !isSubtotal
+          ) {
+            cellStyle.font = { sz: 11, color: { rgb: "2C3E50" } };
+            cellStyle.alignment = { horizontal: "left", vertical: "center" };
+          }
+          // Empty rows for spacing - remove borders
+          else if (isEmptyRow) {
+            delete cellStyle.border;
+            delete cellStyle.fill;
+          }
+
+          // Apply the style
+          ws[cell_ref].s = cellStyle;
+        }
+      }
+
+      // Freeze the top 5 rows and first column (but no filters)
+      ws["!freeze"] = {
+        xSplit: 1,
+        ySplit: 5,
+        topLeftCell: "B6",
+        activePane: "bottomRight",
+      };
+
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    };
+
+    // 1. Create Quarterly Summary sheet (main view) - CLEAN VERSION
+    const quarterlySheetData = [];
+
+    // Add header
+    quarterlySheetData.push(["Quarterly Performance Summary"]);
+    quarterlySheetData.push([`Exported: ${exportDate}`]);
+    quarterlySheetData.push([`Period: ${quarterConfig.quarterName}`]);
+    quarterlySheetData.push([""]); // Empty row
+
+    // Add table header - ONLY ONCE
+    quarterlySheetData.push(TABLE_COLUMNS);
+
+    // Add all rows from groupedTableRows - SKIP GROUP HEADERS
+    groupedTableRows.forEach((item) => {
+      if (item.type === "spacer") {
+        // Add empty row for spacing
+        quarterlySheetData.push(Array(TABLE_COLUMNS.length).fill(""));
+      } else if (item.type === "groupHeader") {
+        // SKIP - Don't add group header row at all
+        return;
+      } else {
+        // Regular row or subtotal row
+        const row = TABLE_COLUMNS.map((col) => item.data[col] || "");
+        quarterlySheetData.push(row);
+      }
+    });
+
+    addFormattedSheet(
+      quarterlySheetData,
+      `${quarterConfig.quarterName} Summary`,
+      true
+    );
+
+    // 2. Create sheets for each month - CLEAN VERSION
+    quarterConfig.months.forEach((month) => {
+      if (datasets[month] && datasets[month].length > 0) {
+        const monthStats = new Map();
+        for (const name of people) {
+          monthStats.set(name, buildOfficerStats(datasets[month], name));
+        }
+
+        const monthSheetData = [];
+        monthSheetData.push([`${month} Performance Summary`]);
+        monthSheetData.push([`Exported: ${exportDate}`]);
+        monthSheetData.push([""]); // Empty row
+
+        // Add table header - ONLY ONCE
+        monthSheetData.push(TABLE_COLUMNS);
+
+        // Add data for each group - NO GROUP HEADERS
+        groups.forEach((g) => {
+          if (g.members.length === 0) return;
+
+          // SKIP group header - don't add it
+
+          // Add member rows
+          const memberRows = g.members
+            .map((name) => monthStats.get(name))
+            .filter(Boolean);
+
+          memberRows.forEach((row) => {
+            const rowData = TABLE_COLUMNS.map((col) => row[col] || "");
+            monthSheetData.push(rowData);
+          });
+
+          // Add subtotal
+          const subtotal = sumStatsRows(memberRows, `${g.name} Totals`);
+          const subtotalRow = TABLE_COLUMNS.map((col) => subtotal[col] || "");
+          monthSheetData.push(subtotalRow);
+
+          // Add empty row for spacing between groups
+          monthSheetData.push(Array(TABLE_COLUMNS.length).fill(""));
+        });
+
+        addFormattedSheet(monthSheetData, month);
+      }
+    });
+
+    // 3. Create Raw Data sheet with clean formatting (NO FILTERS)
+    if (quarterRows.length > 0) {
+      const rawDataSheetData = [];
+      rawDataSheetData.push(["Raw Data - All Months Combined"]);
+      rawDataSheetData.push([`Exported: ${exportDate}`]);
+      rawDataSheetData.push([`Total Records: ${quarterRows.length}`]);
+      rawDataSheetData.push([""]);
+
+      // Get all unique column headers from the raw data
+      const allHeaders = new Set();
+      quarterRows.forEach((row) => {
+        Object.keys(row).forEach((key) => allHeaders.add(key));
+      });
+      const headers = Array.from(allHeaders);
+
+      rawDataSheetData.push(headers);
+
+      // Add all data rows
+      quarterRows.forEach((row) => {
+        const rowData = headers.map((header) => row[header] || "");
+        rawDataSheetData.push(rowData);
+      });
+
+      // Create raw data sheet with basic formatting
+      const rawWs = XLSX.utils.aoa_to_sheet(rawDataSheetData);
+
+      // Set column widths for raw data
+      const rawColWidths = headers.map(() => ({ wch: 20 }));
+      rawWs["!cols"] = rawColWidths;
+
+      // Apply clean formatting to raw data sheet (NO FILTERS)
+      const rawRange = XLSX.utils.decode_range(rawWs["!ref"]);
+      for (let R = 0; R <= rawRange.e.r; ++R) {
+        for (let C = 0; C <= rawRange.e.c; ++C) {
+          const cell_address = { c: C, r: R };
+          const cell_ref = XLSX.utils.encode_cell(cell_address);
+
+          if (!rawWs[cell_ref]) continue;
+
+          let cellStyle = {
+            font: { sz: 10 },
+            alignment: { vertical: "center", wrapText: true },
+            border: {
+              top: { style: "thin", color: { rgb: "E0E0E0" } },
+              bottom: { style: "thin", color: { rgb: "E0E0E0" } },
+              left: { style: "thin", color: { rgb: "E0E0E0" } },
+              right: { style: "thin", color: { rgb: "E0E0E0" } },
+            },
+          };
+
+          // Title row
+          if (R === 0) {
+            cellStyle.font = { sz: 14, bold: true, color: { rgb: "2C3E50" } };
+            delete cellStyle.border;
+          }
+          // Info rows
+          else if (R === 1 || R === 2) {
+            cellStyle.font = { sz: 9, italic: true, color: { rgb: "7F8C8D" } };
+            delete cellStyle.border;
+          }
+          // Column headers
+          else if (R === 4) {
+            cellStyle.font = { sz: 10, bold: true, color: { rgb: "FFFFFF" } };
+            cellStyle.fill = {
+              fgColor: { rgb: "2C3E50" },
+              patternType: "solid",
+            };
+            cellStyle.alignment = { horizontal: "center", vertical: "center" };
+          }
+
+          rawWs[cell_ref].s = cellStyle;
+        }
+      }
+
+      // Freeze panes only (NO FILTERS)
+      rawWs["!freeze"] = {
+        xSplit: 0,
+        ySplit: 5,
+        topLeftCell: "A6",
+        activePane: "bottomRight",
+      };
+
+      XLSX.utils.book_append_sheet(wb, rawWs, "Raw Data");
+    }
+
+    // Generate Excel file
+    const fileName = `Surveillance_Analytics_${
+      quarterConfig.quarterName
+    }_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+  }
+
   const selectedGroup = groups.find((g) => g.id === selectedGroupId);
 
-  const monthCounts = useMemo(
-    () => ({
-      Jan: datasets.Jan.length,
-      Feb: datasets.Feb.length,
-      Mar: datasets.Mar.length,
-      Q1: quarterRows.length,
-    }),
-    [datasets, quarterRows]
-  );
+  const monthCounts = useMemo(() => {
+    const counts = {};
+    quarterConfig.months.forEach((month) => {
+      counts[month] = datasets[month]?.length || 0;
+    });
+    counts[quarterConfig.quarterName] = quarterRows.length;
+    return counts;
+  }, [datasets, quarterRows, quarterConfig]);
 
   const themeClasses =
     theme === "dark" ? "bg-neutral-950 text-white" : "bg-gray-50 text-gray-900";
@@ -530,15 +873,16 @@ export default function App() {
                 SURVEILLANCE ANALYTICS
               </div>
               <div className="text-xl font-semibold tracking-tight">
-                Officer Performance — Quarterly Loader
+                Officer Performance — {quarterConfig.quarterName} Loader
               </div>
               <div
                 className={`mt-1 max-w-3xl text-sm ${
                   theme === "dark" ? "text-white/60" : "text-gray-600"
                 }`}
               >
-                Upload Jan/Feb/Mar CSVs and switch to <b>Q1</b> to view totals
-                across all three months. Grouping works across every view.
+                Upload {quarterConfig.months.join("/")} CSVs and switch to{" "}
+                <b>{quarterConfig.quarterName}</b> to view totals across all
+                months. Grouping works across every view.
               </div>
             </div>
 
@@ -547,71 +891,50 @@ export default function App() {
               <GhostButton theme={theme} onClick={clearAll}>
                 Clear All
               </GhostButton>
+              <PrimaryButton
+                theme={theme}
+                onClick={exportToExcel}
+                disabled={groups.length === 0}
+                title={
+                  groups.length === 0
+                    ? "Create groups first"
+                    : "Export to Excel"
+                }
+              >
+                Export to Excel
+              </PrimaryButton>
             </div>
           </div>
 
           {/* Upload row + view tabs */}
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              <CSVReader
-                config={{ header: true, skipEmptyLines: true }}
-                onUploadAccepted={(results) => loadMonth("Jan", results)}
-              >
-                {({ getRootProps }) => (
-                  <GhostButton theme={theme} {...getRootProps()}>
-                    Upload Jan{" "}
-                    <span
-                      className={
-                        theme === "dark" ? "text-white/60" : "text-gray-500"
-                      }
-                    >
-                      ({monthCounts.Jan})
-                    </span>
-                  </GhostButton>
-                )}
-              </CSVReader>
-
-              <CSVReader
-                config={{ header: true, skipEmptyLines: true }}
-                onUploadAccepted={(results) => loadMonth("Feb", results)}
-              >
-                {({ getRootProps }) => (
-                  <GhostButton theme={theme} {...getRootProps()}>
-                    Upload Feb{" "}
-                    <span
-                      className={
-                        theme === "dark" ? "text-white/60" : "text-gray-500"
-                      }
-                    >
-                      ({monthCounts.Feb})
-                    </span>
-                  </GhostButton>
-                )}
-              </CSVReader>
-
-              <CSVReader
-                config={{ header: true, skipEmptyLines: true }}
-                onUploadAccepted={(results) => loadMonth("Mar", results)}
-              >
-                {({ getRootProps }) => (
-                  <GhostButton theme={theme} {...getRootProps()}>
-                    Upload Mar{" "}
-                    <span
-                      className={
-                        theme === "dark" ? "text-white/60" : "text-gray-500"
-                      }
-                    >
-                      ({monthCounts.Mar})
-                    </span>
-                  </GhostButton>
-                )}
-              </CSVReader>
+              {quarterConfig.months.map((month) => (
+                <CSVReader
+                  key={month}
+                  config={{ header: true, skipEmptyLines: true }}
+                  onUploadAccepted={(results) => loadMonth(month, results)}
+                >
+                  {({ getRootProps }) => (
+                    <GhostButton theme={theme} {...getRootProps()}>
+                      Upload {month}{" "}
+                      <span
+                        className={
+                          theme === "dark" ? "text-white/60" : "text-gray-500"
+                        }
+                      >
+                        ({monthCounts[month]})
+                      </span>
+                    </GhostButton>
+                  )}
+                </CSVReader>
+              ))}
             </div>
 
             <div
               className={`inline-flex shrink-0 overflow-hidden rounded-2xl border ${borderColor} ${subtleBg} p-1`}
             >
-              {["Jan", "Feb", "Mar", "Q1"].map((v) => {
+              {[...quarterConfig.months, quarterConfig.quarterName].map((v) => {
                 const active = activeView === v;
                 return (
                   <button
@@ -777,7 +1100,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Search bar - Add this inside the div above the people list */}
+                {/* Search bar */}
                 <div className={`border-b ${borderColor} px-3 py-2`}>
                   <div className="relative">
                     <input
@@ -1006,9 +1329,24 @@ export default function App() {
                     (like your Excel).
                   </div>
                 </div>
-                <StatPill theme={theme}>
-                  {activeRows.length} active rows
-                </StatPill>
+                <div className="flex items-center gap-2">
+                  <StatPill theme={theme}>
+                    {activeRows.length} active rows
+                  </StatPill>
+                  <PrimaryButton
+                    theme={theme}
+                    onClick={exportToExcel}
+                    disabled={groups.length === 0}
+                    className="text-xs px-3 py-1"
+                    title={
+                      groups.length === 0
+                        ? "Create groups first"
+                        : "Export to Excel"
+                    }
+                  >
+                    Export Excel
+                  </PrimaryButton>
+                </div>
               </div>
 
               <div
@@ -1153,9 +1491,30 @@ export default function App() {
                   theme === "dark" ? "text-white/60" : "text-gray-600"
                 }`}
               >
-                Tip: Switch to <b>Q1</b> after uploading Jan/Feb/Mar to see
-                combined totals. Re-assigning a person moves them so they're
-                only ever in 1 group.
+                <div className="flex items-center justify-between">
+                  <div>
+                    Tip: Switch to <b>{quarterConfig.quarterName}</b> after
+                    uploading all months to see combined totals. Re-assigning a
+                    person moves them so they're only ever in 1 group.
+                  </div>
+                  <PrimaryButton
+                    theme={theme}
+                    onClick={exportToExcel}
+                    disabled={groups.length === 0}
+                    className="text-xs px-3 py-1"
+                    title={
+                      groups.length === 0
+                        ? "Create groups first"
+                        : "Export to Excel"
+                    }
+                  >
+                    Export to Excel
+                  </PrimaryButton>
+                </div>
+                <div className="mt-2 text-xs opacity-75">
+                  Excel export includes: {quarterConfig.quarterName} Summary,{" "}
+                  {quarterConfig.months.join(", ")} sheets, and Raw Data.
+                </div>
               </div>
             </div>
           </div>
