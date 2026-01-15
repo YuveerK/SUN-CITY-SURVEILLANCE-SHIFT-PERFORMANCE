@@ -2,29 +2,200 @@ import React, { useMemo, useState, useEffect } from "react";
 import { useCSVReader } from "react-papaparse";
 import * as XLSX from "xlsx-js-style";
 
-const TABLE_COLUMNS = [
-  "Officer",
-  "Cashiering",
-  "Count",
-  "Technical",
-  "Security",
-  "MVG",
-  "Slots",
-  "AR",
-  "BJ",
-  "RPK",
-  "PB/BACCARAT",
-  "GEN (TABLES)",
-  "Total (T)",
-  "Total",
-  "Detections",
-  "Punter scans",
-  "Systems Check",
-  "Target Breaches",
-  "All Breaches",
+const DEFAULT_COLUMN_DEFS = [
+  {
+    id: "cashiering",
+    label: "Cashiering",
+    type: "count",
+    match: "all",
+    conditions: [
+      { id: "cashiering-1", field: "Department", op: "equals", value: "cashiering" },
+    ],
+  },
+  {
+    id: "count",
+    label: "Count",
+    type: "count",
+    match: "all",
+    conditions: [],
+  },
+  {
+    id: "technical",
+    label: "Technical",
+    type: "count",
+    match: "all",
+    conditions: [
+      { id: "technical-1", field: "Department", op: "equals", value: "technical" },
+    ],
+  },
+  {
+    id: "security",
+    label: "Security",
+    type: "count",
+    match: "all",
+    conditions: [
+      { id: "security-1", field: "Department", op: "equals", value: "security" },
+    ],
+  },
+  {
+    id: "mvg",
+    label: "MVG",
+    type: "count",
+    match: "all",
+    conditions: [{ id: "mvg-1", field: "Department", op: "equals", value: "mvg" }],
+  },
+  {
+    id: "slots",
+    label: "Slots",
+    type: "count",
+    match: "all",
+    conditions: [{ id: "slots-1", field: "Department", op: "equals", value: "slots" }],
+  },
+  {
+    id: "ar",
+    label: "AR",
+    type: "count",
+    match: "all",
+    conditions: [
+      { id: "ar-1", field: "Department", op: "equals", value: "tables" },
+      { id: "ar-2", field: "Station", op: "contains", value: "ar" },
+    ],
+  },
+  {
+    id: "bj",
+    label: "BJ",
+    type: "count",
+    match: "all",
+    conditions: [
+      { id: "bj-1", field: "Department", op: "equals", value: "tables" },
+      { id: "bj-2", field: "Station", op: "contains", value: "bj" },
+    ],
+  },
+  {
+    id: "rpk",
+    label: "RPK",
+    type: "count",
+    match: "all",
+    conditions: [
+      { id: "rpk-1", field: "Department", op: "equals", value: "tables" },
+      { id: "rpk-2", field: "Station", op: "contains", value: "pk" },
+    ],
+  },
+  {
+    id: "pb-baccarat",
+    label: "PB/BACCARAT",
+    type: "count",
+    match: "all",
+    conditions: [
+      { id: "pb-1", field: "Department", op: "equals", value: "tables" },
+      { id: "pb-2", field: "Station", op: "containsAny", value: "pb, baccarat" },
+    ],
+  },
+  {
+    id: "gen-tables",
+    label: "GEN (TABLES)",
+    type: "count",
+    match: "all",
+    conditions: [
+      { id: "gen-1", field: "Department", op: "equals", value: "tables" },
+      { id: "gen-2", field: "Station", op: "isBlank", value: "" },
+    ],
+  },
+  {
+    id: "total-t",
+    label: "Total (T)",
+    type: "sum",
+    sourceIds: ["ar", "bj", "rpk", "pb-baccarat", "gen-tables"],
+    highlight: true,
+  },
+  {
+    id: "total",
+    label: "Total",
+    type: "sum",
+    sourceIds: [
+      "cashiering",
+      "count",
+      "technical",
+      "security",
+      "mvg",
+      "slots",
+      "ar",
+      "bj",
+      "rpk",
+      "pb-baccarat",
+      "gen-tables",
+    ],
+    highlight: true,
+  },
+  {
+    id: "detections",
+    label: "Detections",
+    type: "count",
+    match: "all",
+    conditions: [
+      { id: "detections-1", field: "Detection", op: "equals", value: "yes" },
+    ],
+  },
+  {
+    id: "punter-scans",
+    label: "Punter scans",
+    type: "count",
+    match: "all",
+    conditions: [
+      {
+        id: "punter-1",
+        field: "Occurrence Task",
+        op: "equals",
+        value: "punter scan",
+      },
+    ],
+  },
+  {
+    id: "systems-check",
+    label: "Systems Check",
+    type: "count",
+    match: "all",
+    conditions: [
+      {
+        id: "systems-1",
+        field: "Occurrence Task",
+        op: "equalsAny",
+        value: "alarm test, camera fault logged, early warning test, armed robbery practice",
+      },
+    ],
+  },
+  {
+    id: "target-breaches",
+    label: "Target Breaches",
+    type: "count",
+    match: "all",
+    conditions: [
+      {
+        id: "target-1",
+        field: "Occurrence Type",
+        op: "equals",
+        value: "target report",
+      },
+    ],
+  },
+  {
+    id: "all-breaches",
+    label: "All Breaches",
+    type: "count",
+    match: "all",
+    conditions: [],
+  },
 ];
 
-const NUMERIC_COLUMNS = TABLE_COLUMNS.filter((c) => c !== "Officer");
+const OPERATOR_OPTIONS = [
+  { value: "equals", label: "Equals" },
+  { value: "contains", label: "Contains" },
+  { value: "startsWith", label: "Starts with" },
+  { value: "equalsAny", label: "Equals any (comma)" },
+  { value: "containsAny", label: "Contains any (comma)" },
+  { value: "startsWithAny", label: "Starts with any (comma)" },
+  { value: "isBlank", label: "Is blank" },
+];
 
 // -------- helpers ----------
 function clean(value) {
@@ -40,129 +211,95 @@ function normalizeOfficerName(capturedBy) {
   return clean(capturedBy);
 }
 
-// Systems Check -> Occurrence Task matches these exact values
-const SYSTEM_TASKS = new Set([
-  "alarm test",
-  "camera fault logged",
-  "early warning test",
-  "armed robbery practice",
-]);
+function splitList(value) {
+  return clean(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
 
-function buildOfficerStats(rows, officerName) {
-  const stats = {
-    Officer: officerName,
+function evaluateCondition(row, condition) {
+  const raw = row?.[condition.field];
+  const value = lower(raw);
+  const needle = lower(condition.value);
 
-    Cashiering: 0,
-    Count: 0,
+  if (condition.op === "isBlank") return isBlank(raw);
+  if (condition.op === "equals") return value === needle;
+  if (condition.op === "contains") return value.includes(needle);
+  if (condition.op === "startsWith") return value.startsWith(needle);
 
-    Technical: 0,
-    Security: 0,
-    MVG: 0,
-    Slots: 0,
+  if (condition.op === "equalsAny") {
+    const list = splitList(condition.value);
+    return list.some((item) => value === lower(item));
+  }
 
-    AR: 0,
-    BJ: 0,
-    RPK: 0,
-    "PB/BACCARAT": 0,
-    "GEN (TABLES)": 0,
+  if (condition.op === "containsAny") {
+    const list = splitList(condition.value);
+    return list.some((item) => value.includes(lower(item)));
+  }
 
-    "Total (T)": 0,
-    Total: 0,
+  if (condition.op === "startsWithAny") {
+    const list = splitList(condition.value);
+    return list.some((item) => value.startsWith(lower(item)));
+  }
 
-    Detections: 0,
-    "Punter scans": 0,
-    "Systems Check": 0,
+  return false;
+}
 
-    "Target Breaches": 0,
-    "All Breaches": 0,
-  };
+function matchesRule(row, columnDef) {
+  const conditions = Array.isArray(columnDef.conditions)
+    ? columnDef.conditions
+    : [];
 
+  if (conditions.length === 0) return true;
+
+  const results = conditions.map((condition) =>
+    evaluateCondition(row, condition)
+  );
+
+  return columnDef.match === "any"
+    ? results.some(Boolean)
+    : results.every(Boolean);
+}
+
+function buildOfficerStats(rows, officerName, columnDefs) {
+  const stats = { Officer: officerName };
   const officerRows = rows.filter(
     (r) => normalizeOfficerName(r["Captured By"]) === officerName
   );
 
-  // Count = all rows for that officer (your current logic)
-  stats.Count = officerRows.length;
+  for (const col of columnDefs) stats[col.label] = 0;
 
-  for (const r of officerRows) {
-    const dept = lower(r["Department"]);
-    const task = lower(r["Occurrence Task"]);
-    const occurrenceType = lower(r["Occurrence Type"]);
-    const station = clean(r["Station"]);
-    const stationLower = lower(r["Station"]);
-    const detection = clean(r["Detection"]);
-
-    // ---- Department counts
-    if (dept === "cashiering") stats.Cashiering += 1;
-    if (dept === "technical") stats.Technical += 1;
-    if (dept === "security") stats.Security += 1;
-    if (dept === "mvg") stats.MVG += 1;
-    if (dept === "slots") stats.Slots += 1;
-
-    // ---- Tables buckets
-    if (dept === "tables") {
-      const s = stationLower;
-
-      // GEN (TABLES): Department=Tables AND Station blank
-      if (isBlank(station)) {
-        stats["GEN (TABLES)"] += 1;
-      } else {
-        if (s.startsWith("ar") || s.includes("ar")) stats.AR += 1;
-        if (s.startsWith("bj") || s.includes("bj")) stats.BJ += 1;
-        if (s.startsWith("pk") || s.includes("pk")) stats.RPK += 1;
-        if (s.startsWith("pb") || s.includes("pb") || s.includes("baccarat")) {
-          stats["PB/BACCARAT"] += 1;
-        }
-      }
+  for (const col of columnDefs) {
+    if (col.type !== "count") continue;
+    let count = 0;
+    for (const r of officerRows) {
+      if (matchesRule(r, col)) count += 1;
     }
-
-    // ---- Detections
-    if (lower(detection) === "yes") stats.Detections += 1;
-
-    // ---- Punter scans -> Occurrence Task === "Punter Scan"
-    if (task === "punter scan") stats["Punter scans"] += 1;
-
-    // ---- Systems Check
-    if (SYSTEM_TASKS.has(task)) stats["Systems Check"] += 1;
-
-    // ---- Target Breaches: Occurrence Type === "Target Report"
-    if (occurrenceType === "target report") stats["Target Breaches"] += 1;
+    stats[col.label] = count;
   }
 
-  // All Breaches: no filter = all rows for officer
-  stats["All Breaches"] = stats.Count;
-
-  // Total (T): AR + BJ + RPK + PB/BACCARAT + GEN (TABLES)
-  stats["Total (T)"] =
-    stats.AR +
-    stats.BJ +
-    stats.RPK +
-    stats["PB/BACCARAT"] +
-    stats["GEN (TABLES)"];
-
-  // Total: Cashiering + Count + Technical + Security + MVG + Slots + AR + BJ + RPK + PB/BACCARAT + GEN (TABLES)
-  stats.Total =
-    stats.Cashiering +
-    stats.Count +
-    stats.Technical +
-    stats.Security +
-    stats.MVG +
-    stats.Slots +
-    stats.AR +
-    stats.BJ +
-    stats.RPK +
-    stats["PB/BACCARAT"] +
-    stats["GEN (TABLES)"];
+  const labelById = new Map(columnDefs.map((col) => [col.id, col.label]));
+  for (const col of columnDefs) {
+    if (col.type !== "sum") continue;
+    const sources = Array.isArray(col.sourceIds) ? col.sourceIds : [];
+    let total = 0;
+    for (const id of sources) {
+      const label = labelById.get(id);
+      total += Number(stats?.[label] ?? 0);
+    }
+    stats[col.label] = total;
+  }
 
   return stats;
 }
 
-function sumStatsRows(rows, label) {
+function sumStatsRows(rows, label, numericColumns) {
   const total = { Officer: label };
-  for (const col of NUMERIC_COLUMNS) total[col] = 0;
+  for (const col of numericColumns) total[col] = 0;
 
   for (const r of rows) {
-    for (const col of NUMERIC_COLUMNS) {
+    for (const col of numericColumns) {
       const v = Number(r?.[col] ?? 0);
       total[col] += Number.isFinite(v) ? v : 0;
     }
@@ -295,6 +432,8 @@ export default function App() {
   // Quarter configuration state - can be customized by user
   const [quarterConfig, setQuarterConfig] = useState(QUARTER_CONFIG);
 
+  const [columnDefs, setColumnDefs] = useState(DEFAULT_COLUMN_DEFS);
+
   // Theme state
   const [theme, setTheme] = useState(() => {
     if (typeof window !== "undefined") {
@@ -345,13 +484,47 @@ export default function App() {
     return datasets[activeView] || [];
   }, [activeView, datasets, quarterRows, quarterConfig.quarterName]);
 
+  const tableColumns = useMemo(
+    () => ["Officer", ...columnDefs.map((col) => col.label)],
+    [columnDefs]
+  );
+
+  const numericColumns = useMemo(
+    () => tableColumns.filter((col) => col !== "Officer"),
+    [tableColumns]
+  );
+
+  const availableFields = useMemo(() => {
+    const fieldSet = new Set();
+    for (const row of quarterRows) {
+      Object.keys(row || {}).forEach((key) => {
+        if (clean(key)) fieldSet.add(key);
+      });
+    }
+
+    const fields = Array.from(fieldSet).sort((a, b) =>
+      a.localeCompare(b)
+    );
+
+    if (fields.length > 0) return fields;
+
+    return [
+      "Captured By",
+      "Department",
+      "Occurrence Task",
+      "Occurrence Type",
+      "Station",
+      "Detection",
+    ];
+  }, [quarterRows]);
+
   const statsMap = useMemo(() => {
     const map = new Map();
     for (const name of people) {
-      map.set(name, buildOfficerStats(activeRows, name));
+      map.set(name, buildOfficerStats(activeRows, name, columnDefs));
     }
     return map;
-  }, [activeRows, people]);
+  }, [activeRows, people, columnDefs]);
 
   // Map person -> groupId (ensures only 1 group per person)
   const personToGroup = useMemo(() => {
@@ -387,14 +560,14 @@ export default function App() {
 
       out.push({
         type: "subtotal",
-        data: sumStatsRows(memberRows, `${g.name} Totals`),
+        data: sumStatsRows(memberRows, `${g.name} Totals`, numericColumns),
       });
 
       out.push({ type: "spacer" });
     }
 
     return out;
-  }, [groups, statsMap]);
+  }, [groups, statsMap, numericColumns]);
 
   function createGroup() {
     const name = clean(newGroupName);
@@ -447,6 +620,89 @@ export default function App() {
           : g
       )
     );
+  }
+
+  function resetColumns() {
+    setColumnDefs(DEFAULT_COLUMN_DEFS);
+  }
+
+  function addColumn() {
+    setColumnDefs((prev) => [
+      ...prev,
+      {
+        id: uid(),
+        label: "New Column",
+        type: "count",
+        match: "all",
+        conditions: [],
+      },
+    ]);
+  }
+
+  function updateColumn(columnId, updater) {
+    setColumnDefs((prev) =>
+      prev.map((col) => (col.id === columnId ? updater(col) : col))
+    );
+  }
+
+  function removeColumn(columnId) {
+    setColumnDefs((prev) =>
+      prev
+        .filter((col) => col.id !== columnId)
+        .map((col) =>
+          col.type === "sum"
+            ? {
+                ...col,
+                sourceIds: (col.sourceIds || []).filter(
+                  (id) => id !== columnId
+                ),
+              }
+            : col
+        )
+    );
+  }
+
+  function addCondition(columnId) {
+    const fallbackField = availableFields[0] || "Department";
+    updateColumn(columnId, (col) => ({
+      ...col,
+      conditions: [
+        ...(col.conditions || []),
+        {
+          id: uid(),
+          field: fallbackField,
+          op: "equals",
+          value: "",
+        },
+      ],
+    }));
+  }
+
+  function updateCondition(columnId, conditionId, updater) {
+    updateColumn(columnId, (col) => ({
+      ...col,
+      conditions: (col.conditions || []).map((condition) =>
+        condition.id === conditionId ? updater(condition) : condition
+      ),
+    }));
+  }
+
+  function removeCondition(columnId, conditionId) {
+    updateColumn(columnId, (col) => ({
+      ...col,
+      conditions: (col.conditions || []).filter(
+        (condition) => condition.id !== conditionId
+      ),
+    }));
+  }
+
+  function toggleSourceId(columnId, sourceId) {
+    updateColumn(columnId, (col) => {
+      const current = new Set(col.sourceIds || []);
+      if (current.has(sourceId)) current.delete(sourceId);
+      else current.add(sourceId);
+      return { ...col, sourceIds: Array.from(current) };
+    });
   }
 
   // Load a specific month, keep groups (don't reset them)
@@ -513,9 +769,9 @@ export default function App() {
 
     const wb = XLSX.utils.book_new();
     const exportDate = new Date().toLocaleString();
-
-    const TOTAL_T_COL = TABLE_COLUMNS.indexOf("Total (T)");
-    const TOTAL_COL = TABLE_COLUMNS.indexOf("Total");
+    const highlightSet = new Set(
+      columnDefs.filter((col) => col.highlight).map((col) => col.label)
+    );
 
     const BORDER = {
       top: { style: "thin", color: { rgb: "000000" } },
@@ -530,31 +786,15 @@ export default function App() {
     const addFormattedSheet = (sheetData, sheetName) => {
       const ws = XLSX.utils.aoa_to_sheet(sheetData);
 
-      ws["!cols"] = [
-        { wch: 30 }, // Officer
-        { wch: 12 }, // Cashiering
-        { wch: 8 }, // Count
-        { wch: 12 }, // Technical
-        { wch: 12 }, // Security
-        { wch: 8 }, // MVG
-        { wch: 8 }, // Slots
-        { wch: 8 }, // AR
-        { wch: 8 }, // BJ
-        { wch: 8 }, // RPK
-        { wch: 15 }, // PB/BACCARAT
-        { wch: 15 }, // GEN (TABLES)
-        { wch: 12 }, // Total (T)
-        { wch: 10 }, // Total
-        { wch: 12 }, // Detections
-        { wch: 12 }, // Punter scans
-        { wch: 15 }, // Systems Check
-        { wch: 15 }, // Target Breaches
-        { wch: 12 }, // All Breaches
-      ];
+      ws["!cols"] = tableColumns.map((col, idx) => {
+        if (idx === 0) return { wch: 30 };
+        const width = Math.min(22, Math.max(10, col.length + 2));
+        return { wch: width };
+      });
 
       // Find table header row
       const headerRowIndex = sheetData.findIndex(
-        (r) => r && r[0] === "Officer" && r.length === TABLE_COLUMNS.length
+        (r) => r && r[0] === "Officer" && r.length === tableColumns.length
       );
       const tableStartRow = headerRowIndex;
 
@@ -579,7 +819,7 @@ export default function App() {
           if (!ws[cellRef]) continue;
 
           const value = ws[cellRef].v;
-          const isTotalColumn = C === TOTAL_T_COL || C === TOTAL_COL;
+          const isTotalColumn = highlightSet.has(tableColumns[C]);
 
           // ---- BASE STYLE
           const style = {
@@ -649,16 +889,16 @@ export default function App() {
     quarterlySheetData.push([`Exported: ${exportDate}`]);
     quarterlySheetData.push([`Period: ${quarterConfig.quarterName}`]);
     quarterlySheetData.push([""]);
-    quarterlySheetData.push(TABLE_COLUMNS);
+    quarterlySheetData.push(tableColumns);
 
     groupedTableRows.forEach((item) => {
       if (item.type === "spacer") {
-        quarterlySheetData.push(Array(TABLE_COLUMNS.length).fill(""));
+        quarterlySheetData.push(Array(tableColumns.length).fill(""));
       } else if (item.type === "groupHeader") {
         return;
       } else {
         quarterlySheetData.push(
-          TABLE_COLUMNS.map((col) => item.data[col] ?? "")
+          tableColumns.map((col) => item.data[col] ?? "")
         );
       }
     });
@@ -674,14 +914,17 @@ export default function App() {
 
       const monthStats = new Map();
       for (const name of people) {
-        monthStats.set(name, buildOfficerStats(datasets[month], name));
+        monthStats.set(
+          name,
+          buildOfficerStats(datasets[month], name, columnDefs)
+        );
       }
 
       const monthSheetData = [];
       monthSheetData.push([`${month} Performance Summary`]);
       monthSheetData.push([`Exported: ${exportDate}`]);
       monthSheetData.push([""]);
-      monthSheetData.push(TABLE_COLUMNS);
+      monthSheetData.push(tableColumns);
 
       groups.forEach((g) => {
         if (g.members.length === 0) return;
@@ -691,13 +934,17 @@ export default function App() {
           .filter(Boolean);
 
         memberRows.forEach((row) => {
-          monthSheetData.push(TABLE_COLUMNS.map((col) => row[col] ?? ""));
+          monthSheetData.push(tableColumns.map((col) => row[col] ?? ""));
         });
 
-        const subtotal = sumStatsRows(memberRows, `${g.name} Totals`);
-        monthSheetData.push(TABLE_COLUMNS.map((col) => subtotal[col] ?? ""));
+        const subtotal = sumStatsRows(
+          memberRows,
+          `${g.name} Totals`,
+          numericColumns
+        );
+        monthSheetData.push(tableColumns.map((col) => subtotal[col] ?? ""));
 
-        monthSheetData.push(Array(TABLE_COLUMNS.length).fill(""));
+        monthSheetData.push(Array(tableColumns.length).fill(""));
       });
 
       addFormattedSheet(monthSheetData, month);
@@ -930,7 +1177,291 @@ export default function App() {
             <div
               className={`rounded-3xl border ${borderColor} ${bgColor} p-4 shadow-sm`}
             >
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold">Column Rules</div>
+                  <div
+                    className={`mt-1 text-xs ${
+                      theme === "dark" ? "text-white/60" : "text-gray-600"
+                    }`}
+                  >
+                    Rules apply per month. Quarter view sums all months.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <GhostButton theme={theme} onClick={resetColumns}>
+                    Reset
+                  </GhostButton>
+                  <PrimaryButton theme={theme} onClick={addColumn}>
+                    Add column
+                  </PrimaryButton>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-3">
+                {columnDefs.map((col) => (
+                  <div
+                    key={col.id}
+                    className={`rounded-2xl border ${borderColor} ${subtleBg} p-3`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="min-w-[180px] flex-1">
+                        <Input
+                          theme={theme}
+                          value={col.label}
+                          onChange={(e) =>
+                            updateColumn(col.id, (current) => ({
+                              ...current,
+                              label: e.target.value,
+                            }))
+                          }
+                          onBlur={(e) => {
+                            if (!clean(e.target.value)) {
+                              updateColumn(col.id, (current) => ({
+                                ...current,
+                                label: "Column",
+                              }));
+                            }
+                          }}
+                          placeholder="Column name"
+                        />
+                      </div>
+                      <div className="min-w-[120px]">
+                        <Select
+                          theme={theme}
+                          value={col.type}
+                          onChange={(e) => {
+                            const nextType = e.target.value;
+                            updateColumn(col.id, (current) => {
+                              if (nextType === "sum") {
+                                return {
+                                  ...current,
+                                  type: "sum",
+                                  sourceIds: current.sourceIds || [],
+                                  conditions: [],
+                                  match: "all",
+                                };
+                              }
+                              return {
+                                ...current,
+                                type: "count",
+                                match: current.match || "all",
+                                conditions: current.conditions || [],
+                                sourceIds: [],
+                              };
+                            });
+                          }}
+                        >
+                          <option value="count">count</option>
+                          <option value="sum">sum</option>
+                        </Select>
+                      </div>
+                      <label
+                        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
+                          theme === "dark"
+                            ? "border-white/10 text-white/70"
+                            : "border-gray-300 text-gray-600"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={Boolean(col.highlight)}
+                          onChange={(e) =>
+                            updateColumn(col.id, (current) => ({
+                              ...current,
+                              highlight: e.target.checked,
+                            }))
+                          }
+                          className={cx(
+                            "h-4 w-4 rounded focus:ring-0",
+                            theme === "dark"
+                              ? "border-white/20 bg-white/10 text-white"
+                              : "border-gray-300 bg-white text-gray-900"
+                          )}
+                        />
+                        highlight
+                      </label>
+                      <GhostButton
+                        theme={theme}
+                        onClick={() => removeColumn(col.id)}
+                        className="px-3 py-2"
+                      >
+                        Remove
+                      </GhostButton>
+                    </div>
+
+                    {col.type === "count" ? (
+                      <div className="mt-3 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div
+                            className={`text-xs ${
+                              theme === "dark"
+                                ? "text-white/60"
+                                : "text-gray-600"
+                            }`}
+                          >
+                            Match
+                          </div>
+                          <div className="min-w-[120px]">
+                            <Select
+                              theme={theme}
+                              value={col.match || "all"}
+                              onChange={(e) =>
+                                updateColumn(col.id, (current) => ({
+                                  ...current,
+                                  match: e.target.value,
+                                }))
+                              }
+                            >
+                              <option value="all">all conditions</option>
+                              <option value="any">any condition</option>
+                            </Select>
+                          </div>
+                          <GhostButton
+                            theme={theme}
+                            onClick={() => addCondition(col.id)}
+                            className="px-3 py-2"
+                          >
+                            Add condition
+                          </GhostButton>
+                        </div>
+
+                        {(col.conditions || []).length === 0 ? (
+                          <div
+                            className={`rounded-xl border px-3 py-2 text-xs ${
+                              theme === "dark"
+                                ? "border-white/10 text-white/50"
+                                : "border-gray-300 text-gray-500"
+                            }`}
+                          >
+                            No conditions means count all rows for the officer.
+                          </div>
+                        ) : (
+                          (col.conditions || []).map((condition) => (
+                            <div
+                              key={condition.id}
+                              className="grid grid-cols-1 gap-2 sm:grid-cols-[1.2fr_1fr_1fr_auto]"
+                            >
+                              <Select
+                                theme={theme}
+                                value={condition.field}
+                                onChange={(e) =>
+                                  updateCondition(col.id, condition.id, (cur) => ({
+                                    ...cur,
+                                    field: e.target.value,
+                                  }))
+                                }
+                              >
+                                {availableFields.map((field) => (
+                                  <option key={field} value={field}>
+                                    {field}
+                                  </option>
+                                ))}
+                              </Select>
+                              <Select
+                                theme={theme}
+                                value={condition.op}
+                                onChange={(e) =>
+                                  updateCondition(col.id, condition.id, (cur) => ({
+                                    ...cur,
+                                    op: e.target.value,
+                                  }))
+                                }
+                              >
+                                {OPERATOR_OPTIONS.map((option) => (
+                                  <option key={option.value} value={option.value}>
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </Select>
+                              <Input
+                                theme={theme}
+                                value={condition.value}
+                                onChange={(e) =>
+                                  updateCondition(col.id, condition.id, (cur) => ({
+                                    ...cur,
+                                    value: e.target.value,
+                                  }))
+                                }
+                                disabled={condition.op === "isBlank"}
+                                placeholder={
+                                  condition.op === "isBlank"
+                                    ? "No value"
+                                    : "Value"
+                                }
+                              />
+                              <GhostButton
+                                theme={theme}
+                                onClick={() =>
+                                  removeCondition(col.id, condition.id)
+                                }
+                                className="px-3 py-2"
+                              >
+                                Remove
+                              </GhostButton>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-3">
+                        <div
+                          className={`text-xs ${
+                            theme === "dark" ? "text-white/60" : "text-gray-600"
+                          }`}
+                        >
+                          Sum these columns
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {columnDefs
+                            .filter((source) => source.id !== col.id)
+                            .map((source) => (
+                              <label
+                                key={source.id}
+                                className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs ${
+                                  theme === "dark"
+                                    ? "border-white/10 text-white/70"
+                                    : "border-gray-300 text-gray-600"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={(col.sourceIds || []).includes(
+                                    source.id
+                                  )}
+                                  onChange={() =>
+                                    toggleSourceId(col.id, source.id)
+                                  }
+                                  className={cx(
+                                    "h-4 w-4 rounded focus:ring-0",
+                                    theme === "dark"
+                                      ? "border-white/20 bg-white/10 text-white"
+                                      : "border-gray-300 bg-white text-gray-900"
+                                  )}
+                                />
+                                {source.label}
+                              </label>
+                            ))}
+                          {columnDefs.length <= 1 && (
+                            <div
+                              className={`text-xs ${
+                                theme === "dark"
+                                  ? "text-white/50"
+                                  : "text-gray-500"
+                              }`}
+                            >
+                              Add more columns to build a sum.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className={`mt-6 border-t ${borderColor} pt-4`}>
+                <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold">Groups</div>
                   <div
@@ -1249,6 +1780,7 @@ export default function App() {
                   </div>
                 )}
               </div>
+              </div>
             </div>
 
             {/* RIGHT: Table */}
@@ -1303,7 +1835,7 @@ export default function App() {
                   <table className="w-full min-w-[1350px] border-separate border-spacing-0">
                     <thead className="sticky top-0 z-10">
                       <tr>
-                        {TABLE_COLUMNS.map((c, idx) => (
+                        {tableColumns.map((c, idx) => (
                           <th
                             key={c}
                             className={cx(
@@ -1324,7 +1856,7 @@ export default function App() {
                       {groupedTableRows.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={TABLE_COLUMNS.length}
+                            colSpan={tableColumns.length}
                             className={`px-3 py-8 text-center text-sm ${
                               theme === "dark"
                                 ? "text-white/50"
@@ -1341,7 +1873,7 @@ export default function App() {
                             return (
                               <tr key={`sp-${idx}`}>
                                 <td
-                                  colSpan={TABLE_COLUMNS.length}
+                                  colSpan={tableColumns.length}
                                   className="h-3"
                                 />
                               </tr>
@@ -1352,7 +1884,7 @@ export default function App() {
                             return (
                               <tr key={`gh-${idx}`}>
                                 <td
-                                  colSpan={TABLE_COLUMNS.length}
+                                  colSpan={tableColumns.length}
                                   className={`border-y ${
                                     theme === "dark"
                                       ? "border-white/10 bg-white/5"
@@ -1390,7 +1922,7 @@ export default function App() {
                                     }`
                               )}
                             >
-                              {TABLE_COLUMNS.map((c, colIdx) => (
+                              {tableColumns.map((c, colIdx) => (
                                 <td
                                   key={c}
                                   className={cx(
