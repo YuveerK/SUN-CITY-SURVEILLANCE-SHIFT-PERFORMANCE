@@ -211,6 +211,10 @@ function normalizeOfficerName(capturedBy) {
   return clean(capturedBy);
 }
 
+function isNumericOnly(value) {
+  return /^\d+$/.test(clean(value));
+}
+
 function splitList(value) {
   return clean(value)
     .split(",")
@@ -424,7 +428,7 @@ const QUARTER_CONFIG = {
   quarterName: "Quarter", // Default quarter name
 };
 
-// Group shape: { id, name, role: "officer" | "manager", members: string[] }
+// Group shape: { id, name, role: "officer" | "manager", membersByMonth: { [month]: string[] } }
 export default function App() {
   const { CSVReader } = useCSVReader();
   const [searchQuery, setSearchQuery] = useState("");
@@ -462,6 +466,29 @@ export default function App() {
 
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupRole, setNewGroupRole] = useState("officer");
+
+  const isQuarterView = activeView === quarterConfig.quarterName;
+
+  function buildEmptyMembersByMonth() {
+    const initial = {};
+    quarterConfig.months.forEach((month) => {
+      initial[month] = [];
+    });
+    return initial;
+  }
+
+  function getGroupMembersForView(group, viewKey) {
+    if (viewKey === quarterConfig.quarterName) {
+      const merged = new Set();
+      quarterConfig.months.forEach((month) => {
+        const list = group.membersByMonth?.[month] || [];
+        list.forEach((member) => merged.add(member));
+      });
+      return Array.from(merged);
+    }
+
+    return group.membersByMonth?.[viewKey] || [];
+  }
 
   // Toggle theme
   const toggleTheme = () => {
@@ -518,22 +545,14 @@ export default function App() {
     ];
   }, [quarterRows]);
 
-  const statsMap = useMemo(() => {
-    const map = new Map();
-    for (const name of people) {
-      map.set(name, buildOfficerStats(activeRows, name, columnDefs));
-    }
-    return map;
-  }, [activeRows, people, columnDefs]);
-
-  // Map person -> groupId (ensures only 1 group per person)
+  // Map person -> groupId (ensures only 1 group per person per view)
   const personToGroup = useMemo(() => {
     const map = new Map();
     for (const g of groups) {
-      for (const m of g.members) map.set(m, g.id);
+      for (const m of getGroupMembersForView(g, activeView)) map.set(m, g.id);
     }
     return map;
-  }, [groups]);
+  }, [groups, activeView, quarterConfig.months, quarterConfig.quarterName]);
 
   function toggleChecked(name) {
     setCheckedPeople((prev) =>
@@ -542,19 +561,22 @@ export default function App() {
   }
 
   const groupedTableRows = useMemo(() => {
-    const out = [];
+    const map = new Map();
+    for (const name of people) {
+      map.set(name, buildOfficerStats(activeRows, name, columnDefs));
+    }
 
+    const out = [];
     for (const g of groups) {
-      if (g.members.length === 0) continue;
+      const viewMembers = getGroupMembersForView(g, activeView);
+      if (viewMembers.length === 0) continue;
 
       out.push({
         type: "groupHeader",
         data: { Officer: `${g.name} (${g.role})` },
       });
 
-      const memberRows = g.members
-        .map((name) => statsMap.get(name))
-        .filter(Boolean);
+      const memberRows = viewMembers.map((name) => map.get(name)).filter(Boolean);
 
       for (const r of memberRows) out.push({ type: "row", data: r });
 
@@ -567,34 +589,56 @@ export default function App() {
     }
 
     return out;
-  }, [groups, statsMap, numericColumns]);
+  }, [
+    activeRows,
+    people,
+    columnDefs,
+    groups,
+    numericColumns,
+    activeView,
+    quarterConfig.months,
+    quarterConfig.quarterName,
+  ]);
 
   function createGroup() {
     const name = clean(newGroupName);
     if (!name) return;
 
     const id = uid();
-    const next = { id, name, role: newGroupRole, members: [] };
+    const next = {
+      id,
+      name,
+      role: newGroupRole,
+      membersByMonth: buildEmptyMembersByMonth(),
+    };
 
     setGroups((prev) => [...prev, next]);
     setSelectedGroupId(id); // auto-select new group
     setNewGroupName("");
   }
 
-  // ✅ only 1 group per person: remove from all groups, then add to selected group
+  // ✅ only 1 group per person per view: remove from all groups, then add to selected group
   function assignCheckedToGroup() {
+    if (isQuarterView) return;
     if (!selectedGroupId || checkedPeople.length === 0) return;
 
     setGroups((prev) => {
-      const cleared = prev.map((g) => ({
-        ...g,
-        members: g.members.filter((m) => !checkedPeople.includes(m)),
-      }));
+      const cleared = prev.map((g) => {
+        const membersByMonth = { ...(g.membersByMonth || {}) };
+        const current = membersByMonth[activeView] || [];
+        membersByMonth[activeView] = current.filter(
+          (m) => !checkedPeople.includes(m)
+        );
+        return { ...g, membersByMonth };
+      });
 
       return cleared.map((g) => {
         if (g.id !== selectedGroupId) return g;
-        const merged = Array.from(new Set([...g.members, ...checkedPeople]));
-        return { ...g, members: merged };
+        const membersByMonth = { ...(g.membersByMonth || {}) };
+        const current = membersByMonth[activeView] || [];
+        const merged = Array.from(new Set([...current, ...checkedPeople]));
+        membersByMonth[activeView] = merged;
+        return { ...g, membersByMonth };
       });
     });
 
@@ -602,8 +646,14 @@ export default function App() {
   }
 
   function clearGroup(groupId) {
+    if (isQuarterView) return;
     setGroups((prev) =>
-      prev.map((g) => (g.id === groupId ? { ...g, members: [] } : g))
+      prev.map((g) => {
+        if (g.id !== groupId) return g;
+        const membersByMonth = { ...(g.membersByMonth || {}) };
+        membersByMonth[activeView] = [];
+        return { ...g, membersByMonth };
+      })
     );
   }
 
@@ -613,12 +663,15 @@ export default function App() {
   }
 
   function removeMember(groupId, member) {
+    if (isQuarterView) return;
     setGroups((prev) =>
-      prev.map((g) =>
-        g.id === groupId
-          ? { ...g, members: g.members.filter((m) => m !== member) }
-          : g
-      )
+      prev.map((g) => {
+        if (g.id !== groupId) return g;
+        const membersByMonth = { ...(g.membersByMonth || {}) };
+        const current = membersByMonth[activeView] || [];
+        membersByMonth[activeView] = current.filter((m) => m !== member);
+        return { ...g, membersByMonth };
+      })
     );
   }
 
@@ -723,14 +776,32 @@ export default function App() {
         )
       ).sort((a, b) => a.localeCompare(b));
 
+      const numericNames = Array.from(
+        new Set(
+          parsed
+            .map((r) => normalizeOfficerName(r["Captured By"]))
+            .filter((n) => n.length > 0 && isNumericOnly(n))
+        )
+      );
+      if (numericNames.length > 0) {
+        console.warn(
+          `[Captured By] Numeric-only names found in ${monthKey}:`,
+          numericNames
+        );
+      }
+
       // update dependent state safely
       setPeople(unique);
 
       setGroups((prevGroups) =>
-        prevGroups.map((g) => ({
-          ...g,
-          members: g.members.filter((m) => unique.includes(m)),
-        }))
+        prevGroups.map((g) => {
+          const membersByMonth = {};
+          quarterConfig.months.forEach((month) => {
+            const current = g.membersByMonth?.[month] || [];
+            membersByMonth[month] = current.filter((m) => unique.includes(m));
+          });
+          return { ...g, membersByMonth };
+        })
       );
 
       setCheckedPeople((prevChecks) =>
@@ -884,6 +955,37 @@ export default function App() {
     };
 
     // ========== 1) QUARTER SUMMARY SHEET ==========
+    const quarterStats = new Map();
+    for (const name of people) {
+      quarterStats.set(name, buildOfficerStats(quarterRows, name, columnDefs));
+    }
+
+    const quarterGroupedRows = [];
+    groups.forEach((g) => {
+      const viewMembers = getGroupMembersForView(g, quarterConfig.quarterName);
+      if (viewMembers.length === 0) return;
+
+      quarterGroupedRows.push({
+        type: "groupHeader",
+        data: { Officer: `${g.name} (${g.role})` },
+      });
+
+      const memberRows = viewMembers
+        .map((name) => quarterStats.get(name))
+        .filter(Boolean);
+
+      memberRows.forEach((row) => {
+        quarterGroupedRows.push({ type: "row", data: row });
+      });
+
+      quarterGroupedRows.push({
+        type: "subtotal",
+        data: sumStatsRows(memberRows, `${g.name} Totals`, numericColumns),
+      });
+
+      quarterGroupedRows.push({ type: "spacer" });
+    });
+
     const quarterlySheetData = [];
     quarterlySheetData.push(["Quarterly Performance Summary"]);
     quarterlySheetData.push([`Exported: ${exportDate}`]);
@@ -891,7 +993,7 @@ export default function App() {
     quarterlySheetData.push([""]);
     quarterlySheetData.push(tableColumns);
 
-    groupedTableRows.forEach((item) => {
+    quarterGroupedRows.forEach((item) => {
       if (item.type === "spacer") {
         quarterlySheetData.push(Array(tableColumns.length).fill(""));
       } else if (item.type === "groupHeader") {
@@ -927,9 +1029,10 @@ export default function App() {
       monthSheetData.push(tableColumns);
 
       groups.forEach((g) => {
-        if (g.members.length === 0) return;
+        const viewMembers = getGroupMembersForView(g, month);
+        if (viewMembers.length === 0) return;
 
-        const memberRows = g.members
+        const memberRows = viewMembers
           .map((name) => monthStats.get(name))
           .filter(Boolean);
 
@@ -1076,7 +1179,7 @@ export default function App() {
               >
                 Upload {quarterConfig.months.join("/")} CSVs and switch to{" "}
                 <b>{quarterConfig.quarterName}</b> to view totals across all
-                months. Grouping works across every view.
+                months. Grouping is set per month and rolls up in the quarter.
               </div>
             </div>
 
@@ -1470,7 +1573,7 @@ export default function App() {
                     }`}
                   >
                     Unlimited groups. A person can be in <b>one</b> group only
-                    (re-assigning moves them).
+                    per month (re-assigning moves them).
                   </div>
                 </div>
                 <StatPill theme={theme}>{people.length} people</StatPill>
@@ -1514,9 +1617,15 @@ export default function App() {
                 <PrimaryButton
                   theme={theme}
                   onClick={assignCheckedToGroup}
-                  disabled={!selectedGroupId || checkedPeople.length === 0}
+                  disabled={
+                    isQuarterView ||
+                    !selectedGroupId ||
+                    checkedPeople.length === 0
+                  }
                   title={
-                    selectedGroup
+                    isQuarterView
+                      ? "Switch to a month to edit members"
+                      : selectedGroup
                       ? `Assign to ${selectedGroup.name}`
                       : "Select a group first"
                   }
@@ -1686,7 +1795,9 @@ export default function App() {
 
               {/* Groups list */}
               <div className="mt-4 space-y-3">
-                {groups.map((g) => (
+                {groups.map((g) => {
+                  const viewMembers = getGroupMembersForView(g, activeView);
+                  return (
                   <div
                     key={g.id}
                     className={`rounded-2xl border ${borderColor} ${bgColor} p-3`}
@@ -1698,7 +1809,7 @@ export default function App() {
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-2">
                           <StatPill theme={theme}>
-                            {g.role} • {g.members.length}
+                            {g.role} • {viewMembers.length}
                           </StatPill>
                           {selectedGroupId === g.id && (
                             <StatPill theme={theme}>selected</StatPill>
@@ -1710,7 +1821,7 @@ export default function App() {
                         <GhostButton
                           theme={theme}
                           onClick={() => clearGroup(g.id)}
-                          disabled={g.members.length === 0}
+                          disabled={isQuarterView || viewMembers.length === 0}
                           className="px-3 py-2"
                         >
                           Clear
@@ -1725,17 +1836,19 @@ export default function App() {
                       </div>
                     </div>
 
-                    {g.members.length === 0 ? (
+                    {viewMembers.length === 0 ? (
                       <div
                         className={`mt-3 text-xs ${
                           theme === "dark" ? "text-white/50" : "text-gray-500"
                         }`}
                       >
-                        No members.
+                        {isQuarterView
+                          ? "No members for this view."
+                          : "No members."}
                       </div>
                     ) : (
                       <div className="mt-3 space-y-2">
-                        {g.members.map((m) => (
+                        {viewMembers.map((m) => (
                           <div
                             key={m}
                             className={`flex items-center justify-between gap-2 rounded-xl border ${borderColor} ${
@@ -1757,6 +1870,7 @@ export default function App() {
                               theme={theme}
                               onClick={() => removeMember(g.id, m)}
                               className="px-3 py-2"
+                              disabled={isQuarterView}
                             >
                               Remove
                             </GhostButton>
@@ -1765,7 +1879,8 @@ export default function App() {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
 
                 {groups.length === 0 && (
                   <div
@@ -1974,7 +2089,7 @@ export default function App() {
                   <div>
                     Tip: Switch to <b>{quarterConfig.quarterName}</b> after
                     uploading all months to see combined totals. Re-assigning a
-                    person moves them so they're only ever in 1 group.
+                    person moves them so they're only ever in 1 group per month.
                   </div>
                   <PrimaryButton
                     theme={theme}
