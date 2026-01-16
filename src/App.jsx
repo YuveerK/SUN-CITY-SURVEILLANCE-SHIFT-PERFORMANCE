@@ -9,7 +9,12 @@ const DEFAULT_COLUMN_DEFS = [
     type: "count",
     match: "all",
     conditions: [
-      { id: "cashiering-1", field: "Department", op: "equals", value: "cashiering" },
+      {
+        id: "cashiering-1",
+        field: "Department",
+        op: "equals",
+        value: "cashiering",
+      },
     ],
   },
   {
@@ -25,7 +30,12 @@ const DEFAULT_COLUMN_DEFS = [
     type: "count",
     match: "all",
     conditions: [
-      { id: "technical-1", field: "Department", op: "equals", value: "technical" },
+      {
+        id: "technical-1",
+        field: "Department",
+        op: "equals",
+        value: "technical",
+      },
     ],
   },
   {
@@ -34,7 +44,12 @@ const DEFAULT_COLUMN_DEFS = [
     type: "count",
     match: "all",
     conditions: [
-      { id: "security-1", field: "Department", op: "equals", value: "security" },
+      {
+        id: "security-1",
+        field: "Department",
+        op: "equals",
+        value: "security",
+      },
     ],
   },
   {
@@ -42,14 +57,18 @@ const DEFAULT_COLUMN_DEFS = [
     label: "MVG",
     type: "count",
     match: "all",
-    conditions: [{ id: "mvg-1", field: "Department", op: "equals", value: "mvg" }],
+    conditions: [
+      { id: "mvg-1", field: "Department", op: "equals", value: "mvg" },
+    ],
   },
   {
     id: "slots",
     label: "Slots",
     type: "count",
     match: "all",
-    conditions: [{ id: "slots-1", field: "Department", op: "equals", value: "slots" }],
+    conditions: [
+      { id: "slots-1", field: "Department", op: "equals", value: "slots" },
+    ],
   },
   {
     id: "ar",
@@ -88,7 +107,12 @@ const DEFAULT_COLUMN_DEFS = [
     match: "all",
     conditions: [
       { id: "pb-1", field: "Department", op: "equals", value: "tables" },
-      { id: "pb-2", field: "Station", op: "containsAny", value: "pb, baccarat" },
+      {
+        id: "pb-2",
+        field: "Station",
+        op: "containsAny",
+        value: "pb, baccarat",
+      },
     ],
   },
   {
@@ -160,7 +184,8 @@ const DEFAULT_COLUMN_DEFS = [
         id: "systems-1",
         field: "Occurrence Task",
         op: "equalsAny",
-        value: "alarm test, camera fault logged, early warning test, armed robbery practice",
+        value:
+          "alarm test, camera fault logged, early warning test, armed robbery practice",
       },
     ],
   },
@@ -437,6 +462,8 @@ export default function App() {
   const [quarterConfig, setQuarterConfig] = useState(QUARTER_CONFIG);
 
   const [columnDefs, setColumnDefs] = useState(DEFAULT_COLUMN_DEFS);
+  const [draggingColumnId, setDraggingColumnId] = useState(null);
+  const [dragOverColumnId, setDragOverColumnId] = useState(null);
 
   // Theme state
   const [theme, setTheme] = useState(() => {
@@ -529,9 +556,7 @@ export default function App() {
       });
     }
 
-    const fields = Array.from(fieldSet).sort((a, b) =>
-      a.localeCompare(b)
-    );
+    const fields = Array.from(fieldSet).sort((a, b) => a.localeCompare(b));
 
     if (fields.length > 0) return fields;
 
@@ -576,7 +601,9 @@ export default function App() {
         data: { Officer: `${g.name} (${g.role})` },
       });
 
-      const memberRows = viewMembers.map((name) => map.get(name)).filter(Boolean);
+      const memberRows = viewMembers
+        .map((name) => map.get(name))
+        .filter(Boolean);
 
       for (const r of memberRows) out.push({ type: "row", data: r });
 
@@ -690,6 +717,65 @@ export default function App() {
         conditions: [],
       },
     ]);
+  }
+
+  function duplicateColumn(columnId) {
+    setColumnDefs((prev) => {
+      const index = prev.findIndex((col) => col.id === columnId);
+      if (index < 0) return prev;
+      const original = prev[index];
+      const cloned = {
+        ...original,
+        id: uid(),
+        label: `${original.label} Copy`,
+        conditions: (original.conditions || []).map((condition) => ({
+          ...condition,
+          id: uid(),
+        })),
+        sourceIds: Array.isArray(original.sourceIds)
+          ? [...original.sourceIds]
+          : [],
+      };
+      return [...prev.slice(0, index + 1), cloned, ...prev.slice(index + 1)];
+    });
+  }
+
+  function reorderColumn(sourceId, targetId) {
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    setColumnDefs((prev) => {
+      const sourceIndex = prev.findIndex((col) => col.id === sourceId);
+      const targetIndex = prev.findIndex((col) => col.id === targetId);
+      if (sourceIndex < 0 || targetIndex < 0) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+  }
+
+  function handleColumnDragStart(columnId, event) {
+    setDraggingColumnId(columnId);
+    setDragOverColumnId(null);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", columnId);
+  }
+
+  function handleColumnDragOver(columnId, event) {
+    event.preventDefault();
+    setDragOverColumnId(columnId);
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  function handleColumnDrop(columnId, event) {
+    event.preventDefault();
+    const sourceId = event.dataTransfer.getData("text/plain");
+    reorderColumn(sourceId, columnId);
+    setDragOverColumnId(null);
+  }
+
+  function handleColumnDragEnd() {
+    setDraggingColumnId(null);
+    setDragOverColumnId(null);
   }
 
   function updateColumn(columnId, updater) {
@@ -1280,22 +1366,77 @@ export default function App() {
             <div
               className={`rounded-3xl border ${borderColor} ${bgColor} p-4 shadow-sm`}
             >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold">Column Rules</div>
-                  <div
-                    className={`mt-1 text-xs ${
-                      theme === "dark" ? "text-white/60" : "text-gray-600"
-                    }`}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span
+                    className={cx(
+                      "inline-flex h-9 w-9 items-center justify-center rounded-xl border",
+                      theme === "dark"
+                        ? "border-white/10 bg-white/5 text-white/80"
+                        : "border-gray-200 bg-white text-gray-700"
+                    )}
                   >
-                    Rules apply per month. Quarter view sums all months.
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="18"
+                      height="18"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M4 7h16M4 12h16M4 17h10" />
+                    </svg>
+                  </span>
+                  <div>
+                    <div className="text-sm font-semibold">Column Rules</div>
+                    <div
+                      className={`mt-1 text-xs ${
+                        theme === "dark" ? "text-white/60" : "text-gray-600"
+                      }`}
+                    >
+                      Rules apply per month. Quarter view sums all months.
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <GhostButton theme={theme} onClick={resetColumns}>
+                    <span className="mr-2 inline-flex items-center">
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M3 12a9 9 0 1 0 3-6.7" />
+                        <path d="M3 4v5h5" />
+                      </svg>
+                    </span>
                     Reset
                   </GhostButton>
                   <PrimaryButton theme={theme} onClick={addColumn}>
+                    <span className="mr-2 inline-flex items-center">
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                    </span>
                     Add column
                   </PrimaryButton>
                 </div>
@@ -1305,9 +1446,47 @@ export default function App() {
                 {columnDefs.map((col) => (
                   <div
                     key={col.id}
-                    className={`rounded-2xl border ${borderColor} ${subtleBg} p-3`}
+                    draggable
+                    onDragStart={(event) => handleColumnDragStart(col.id, event)}
+                    onDragOver={(event) => handleColumnDragOver(col.id, event)}
+                    onDrop={(event) => handleColumnDrop(col.id, event)}
+                    onDragEnd={handleColumnDragEnd}
+                    className={cx(
+                      "group rounded-2xl border p-3 transition",
+                      borderColor,
+                      subtleBg,
+                      draggingColumnId === col.id ? "opacity-70" : "",
+                      dragOverColumnId === col.id
+                        ? theme === "dark"
+                          ? "ring-2 ring-white/30"
+                          : "ring-2 ring-gray-400"
+                        : ""
+                    )}
                   >
                     <div className="flex flex-wrap items-center gap-2">
+                      <div
+                        className={cx(
+                          "inline-flex h-9 w-9 items-center justify-center rounded-xl border",
+                          theme === "dark"
+                            ? "border-white/10 bg-white/5 text-white/60"
+                            : "border-gray-200 bg-white text-gray-500"
+                        )}
+                        title="Drag to reorder"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="16"
+                          height="16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" />
+                        </svg>
+                      </div>
                       <div className="min-w-[180px] flex-1">
                         <Input
                           theme={theme}
@@ -1386,10 +1565,48 @@ export default function App() {
                       </label>
                       <GhostButton
                         theme={theme}
+                        onClick={() => duplicateColumn(col.id)}
+                        className="px-3 py-2"
+                        title="Copy column"
+                        aria-label="Copy column"
+                      >
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="16"
+                          height="16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <rect x="9" y="9" width="11" height="11" rx="2" />
+                          <rect x="4" y="4" width="11" height="11" rx="2" />
+                        </svg>
+                      </GhostButton>
+                      <GhostButton
+                        theme={theme}
                         onClick={() => removeColumn(col.id)}
                         className="px-3 py-2"
+                        title="Remove column"
+                        aria-label="Remove column"
                       >
-                        Remove
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="16"
+                          height="16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M3 6h18" />
+                          <path d="M8 6v-2h8v2" />
+                          <path d="M8 10v7M12 10v7M16 10v7" />
+                        </svg>
                       </GhostButton>
                     </div>
 
@@ -1449,10 +1666,14 @@ export default function App() {
                                 theme={theme}
                                 value={condition.field}
                                 onChange={(e) =>
-                                  updateCondition(col.id, condition.id, (cur) => ({
-                                    ...cur,
-                                    field: e.target.value,
-                                  }))
+                                  updateCondition(
+                                    col.id,
+                                    condition.id,
+                                    (cur) => ({
+                                      ...cur,
+                                      field: e.target.value,
+                                    })
+                                  )
                                 }
                               >
                                 {availableFields.map((field) => (
@@ -1465,14 +1686,21 @@ export default function App() {
                                 theme={theme}
                                 value={condition.op}
                                 onChange={(e) =>
-                                  updateCondition(col.id, condition.id, (cur) => ({
-                                    ...cur,
-                                    op: e.target.value,
-                                  }))
+                                  updateCondition(
+                                    col.id,
+                                    condition.id,
+                                    (cur) => ({
+                                      ...cur,
+                                      op: e.target.value,
+                                    })
+                                  )
                                 }
                               >
                                 {OPERATOR_OPTIONS.map((option) => (
-                                  <option key={option.value} value={option.value}>
+                                  <option
+                                    key={option.value}
+                                    value={option.value}
+                                  >
                                     {option.label}
                                   </option>
                                 ))}
@@ -1481,10 +1709,14 @@ export default function App() {
                                 theme={theme}
                                 value={condition.value}
                                 onChange={(e) =>
-                                  updateCondition(col.id, condition.id, (cur) => ({
-                                    ...cur,
-                                    value: e.target.value,
-                                  }))
+                                  updateCondition(
+                                    col.id,
+                                    condition.id,
+                                    (cur) => ({
+                                      ...cur,
+                                      value: e.target.value,
+                                    })
+                                  )
                                 }
                                 disabled={condition.op === "isBlank"}
                                 placeholder={
@@ -1565,336 +1797,340 @@ export default function App() {
 
               <div className={`mt-6 border-t ${borderColor} pt-4`}>
                 <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold">Groups</div>
-                  <div
-                    className={`mt-1 text-xs ${
-                      theme === "dark" ? "text-white/60" : "text-gray-600"
-                    }`}
-                  >
-                    Unlimited groups. A person can be in <b>one</b> group only
-                    per month (re-assigning moves them).
-                  </div>
-                </div>
-                <StatPill theme={theme}>{people.length} people</StatPill>
-              </div>
-
-              {/* Create */}
-              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_140px_110px]">
-                <Input
-                  theme={theme}
-                  value={newGroupName}
-                  onChange={(e) => setNewGroupName(e.target.value)}
-                  placeholder='e.g. "Shift 1" / "Managers"'
-                />
-                <Select
-                  theme={theme}
-                  value={newGroupRole}
-                  onChange={(e) => setNewGroupRole(e.target.value)}
-                >
-                  <option value="officer">officer</option>
-                  <option value="manager">manager</option>
-                </Select>
-                <PrimaryButton theme={theme} onClick={createGroup}>
-                  Add
-                </PrimaryButton>
-              </div>
-
-              {/* Assign */}
-              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_110px]">
-                <Select
-                  theme={theme}
-                  value={selectedGroupId}
-                  onChange={(e) => setSelectedGroupId(e.target.value)}
-                >
-                  <option value="">Select group…</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name} ({g.role})
-                    </option>
-                  ))}
-                </Select>
-                <PrimaryButton
-                  theme={theme}
-                  onClick={assignCheckedToGroup}
-                  disabled={
-                    isQuarterView ||
-                    !selectedGroupId ||
-                    checkedPeople.length === 0
-                  }
-                  title={
-                    isQuarterView
-                      ? "Switch to a month to edit members"
-                      : selectedGroup
-                      ? `Assign to ${selectedGroup.name}`
-                      : "Select a group first"
-                  }
-                >
-                  Assign
-                </PrimaryButton>
-              </div>
-
-              {/* Quick actions */}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <GhostButton
-                  theme={theme}
-                  onClick={() => setCheckedPeople(people)}
-                  disabled={people.length === 0}
-                >
-                  Check all
-                </GhostButton>
-                <GhostButton
-                  theme={theme}
-                  onClick={() => setCheckedPeople([])}
-                  disabled={people.length === 0}
-                >
-                  Clear checks
-                </GhostButton>
-              </div>
-
-              {/* People list */}
-              <div
-                className={`mt-4 overflow-hidden rounded-2xl border ${borderColor}`}
-              >
-                <div
-                  className={`flex items-center justify-between ${subtleBg} px-3 py-2`}
-                >
-                  <div
-                    className={`text-xs font-semibold ${
-                      theme === "dark" ? "text-white/70" : "text-gray-600"
-                    }`}
-                  >
-                    People (Captured By)
-                  </div>
-                  <div
-                    className={`text-xs ${
-                      theme === "dark" ? "text-white/50" : "text-gray-500"
-                    }`}
-                  >
-                    checked:{" "}
-                    <b
-                      className={
-                        theme === "dark" ? "text-white/80" : "text-gray-700"
-                      }
-                    >
-                      {checkedPeople.length}
-                    </b>
-                    {searchQuery && (
-                      <span className="ml-2">
-                        • showing {filteredPeople.length} of {people.length}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Search bar */}
-                <div className={`border-b ${borderColor} px-3 py-2`}>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search people..."
-                      className={`w-full rounded-lg border ${
-                        theme === "dark"
-                          ? "border-white/10 bg-white/5"
-                          : "border-gray-300 bg-white"
-                      } px-3 py-2 text-sm ${
-                        theme === "dark"
-                          ? "text-white placeholder:text-white/40"
-                          : "text-gray-900 placeholder:text-gray-400"
-                      } outline-none transition focus:border-opacity-50 ${
-                        theme === "dark"
-                          ? "focus:border-white/30"
-                          : "focus:border-gray-400"
+                  <div>
+                    <div className="text-sm font-semibold">Groups</div>
+                    <div
+                      className={`mt-1 text-xs ${
+                        theme === "dark" ? "text-white/60" : "text-gray-600"
                       }`}
-                    />
-                    {searchQuery && (
-                      <button
-                        onClick={() => setSearchQuery("")}
-                        className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 ${
-                          theme === "dark"
-                            ? "text-white/60 hover:text-white"
-                            : "text-gray-400 hover:text-gray-600"
-                        }`}
-                        aria-label="Clear search"
+                    >
+                      Unlimited groups. A person can be in <b>one</b> group only
+                      per month (re-assigning moves them).
+                    </div>
+                  </div>
+                  <StatPill theme={theme}>{people.length} people</StatPill>
+                </div>
+
+                {/* Create */}
+                <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_140px_110px]">
+                  <Input
+                    theme={theme}
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                    placeholder='e.g. "Shift 1" / "Managers"'
+                  />
+                  <Select
+                    theme={theme}
+                    value={newGroupRole}
+                    onChange={(e) => setNewGroupRole(e.target.value)}
+                  >
+                    <option value="officer">officer</option>
+                    <option value="manager">manager</option>
+                  </Select>
+                  <PrimaryButton theme={theme} onClick={createGroup}>
+                    Add
+                  </PrimaryButton>
+                </div>
+
+                {/* Assign */}
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_110px]">
+                  <Select
+                    theme={theme}
+                    value={selectedGroupId}
+                    onChange={(e) => setSelectedGroupId(e.target.value)}
+                  >
+                    <option value="">Select group…</option>
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name} ({g.role})
+                      </option>
+                    ))}
+                  </Select>
+                  <PrimaryButton
+                    theme={theme}
+                    onClick={assignCheckedToGroup}
+                    disabled={
+                      isQuarterView ||
+                      !selectedGroupId ||
+                      checkedPeople.length === 0
+                    }
+                    title={
+                      isQuarterView
+                        ? "Switch to a month to edit members"
+                        : selectedGroup
+                        ? `Assign to ${selectedGroup.name}`
+                        : "Select a group first"
+                    }
+                  >
+                    Assign
+                  </PrimaryButton>
+                </div>
+
+                {/* Quick actions */}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <GhostButton
+                    theme={theme}
+                    onClick={() => setCheckedPeople(people)}
+                    disabled={people.length === 0}
+                  >
+                    Check all
+                  </GhostButton>
+                  <GhostButton
+                    theme={theme}
+                    onClick={() => setCheckedPeople([])}
+                    disabled={people.length === 0}
+                  >
+                    Clear checks
+                  </GhostButton>
+                </div>
+
+                {/* People list */}
+                <div
+                  className={`mt-4 overflow-hidden rounded-2xl border ${borderColor}`}
+                >
+                  <div
+                    className={`flex items-center justify-between ${subtleBg} px-3 py-2`}
+                  >
+                    <div
+                      className={`text-xs font-semibold ${
+                        theme === "dark" ? "text-white/70" : "text-gray-600"
+                      }`}
+                    >
+                      People (Captured By)
+                    </div>
+                    <div
+                      className={`text-xs ${
+                        theme === "dark" ? "text-white/50" : "text-gray-500"
+                      }`}
+                    >
+                      checked:{" "}
+                      <b
+                        className={
+                          theme === "dark" ? "text-white/80" : "text-gray-700"
+                        }
                       >
-                        ✕
-                      </button>
-                    )}
+                        {checkedPeople.length}
+                      </b>
+                      {searchQuery && (
+                        <span className="ml-2">
+                          • showing {filteredPeople.length} of {people.length}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                <div
-                  className={`max-h-[320px] overflow-auto ${
-                    theme === "dark" ? "bg-neutral-950/20" : "bg-gray-50/50"
-                  } px-3 py-2`}
-                >
-                  {people.length === 0 ? (
-                    <div
-                      className={`py-6 text-center text-sm ${
-                        theme === "dark" ? "text-white/50" : "text-gray-500"
-                      }`}
-                    >
-                      Upload at least one month CSV to see names.
+                  {/* Search bar */}
+                  <div className={`border-b ${borderColor} px-3 py-2`}>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search people..."
+                        className={`w-full rounded-lg border ${
+                          theme === "dark"
+                            ? "border-white/10 bg-white/5"
+                            : "border-gray-300 bg-white"
+                        } px-3 py-2 text-sm ${
+                          theme === "dark"
+                            ? "text-white placeholder:text-white/40"
+                            : "text-gray-900 placeholder:text-gray-400"
+                        } outline-none transition focus:border-opacity-50 ${
+                          theme === "dark"
+                            ? "focus:border-white/30"
+                            : "focus:border-gray-400"
+                        }`}
+                      />
+                      {searchQuery && (
+                        <button
+                          onClick={() => setSearchQuery("")}
+                          className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 ${
+                            theme === "dark"
+                              ? "text-white/60 hover:text-white"
+                              : "text-gray-400 hover:text-gray-600"
+                          }`}
+                          aria-label="Clear search"
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
-                  ) : filteredPeople.length === 0 ? (
-                    <div
-                      className={`py-6 text-center text-sm ${
-                        theme === "dark" ? "text-white/50" : "text-gray-500"
-                      }`}
-                    >
-                      No people found for "{searchQuery}"
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {filteredPeople.map((name) => {
-                        const checked = checkedPeople.includes(name);
-                        const groupId = personToGroup.get(name);
-                        return (
-                          <label
-                            key={name}
-                            className={cx(
-                              "flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 transition",
-                              theme === "dark"
-                                ? "hover:bg-white/5"
-                                : "hover:bg-gray-100",
-                              groupId ? "opacity-80" : ""
-                            )}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => toggleChecked(name)}
-                              className={cx(
-                                "h-4 w-4 rounded focus:ring-0",
-                                theme === "dark"
-                                  ? "border-white/20 bg-white/10 text-white"
-                                  : "border-gray-300 bg-white text-gray-900"
-                              )}
-                            />
-                            <span
-                              className={`flex-1 truncate text-sm ${
-                                theme === "dark"
-                                  ? "text-white/90"
-                                  : "text-gray-900"
-                              }`}
-                            >
-                              {name}
-                            </span>
-                            {groupId && (
-                              <StatPill theme={theme}>assigned</StatPill>
-                            )}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
+                  </div>
 
-              {/* Groups list */}
-              <div className="mt-4 space-y-3">
-                {groups.map((g) => {
-                  const viewMembers = getGroupMembersForView(g, activeView);
-                  return (
                   <div
-                    key={g.id}
-                    className={`rounded-2xl border ${borderColor} ${bgColor} p-3`}
+                    className={`max-h-[320px] overflow-auto ${
+                      theme === "dark" ? "bg-neutral-950/20" : "bg-gray-50/50"
+                    } px-3 py-2`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-semibold">
-                          {g.name}
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <StatPill theme={theme}>
-                            {g.role} • {viewMembers.length}
-                          </StatPill>
-                          {selectedGroupId === g.id && (
-                            <StatPill theme={theme}>selected</StatPill>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex shrink-0 items-center gap-2">
-                        <GhostButton
-                          theme={theme}
-                          onClick={() => clearGroup(g.id)}
-                          disabled={isQuarterView || viewMembers.length === 0}
-                          className="px-3 py-2"
-                        >
-                          Clear
-                        </GhostButton>
-                        <GhostButton
-                          theme={theme}
-                          onClick={() => deleteGroup(g.id)}
-                          className="px-3 py-2"
-                        >
-                          Delete
-                        </GhostButton>
-                      </div>
-                    </div>
-
-                    {viewMembers.length === 0 ? (
+                    {people.length === 0 ? (
                       <div
-                        className={`mt-3 text-xs ${
+                        className={`py-6 text-center text-sm ${
                           theme === "dark" ? "text-white/50" : "text-gray-500"
                         }`}
                       >
-                        {isQuarterView
-                          ? "No members for this view."
-                          : "No members."}
+                        Upload at least one month CSV to see names.
+                      </div>
+                    ) : filteredPeople.length === 0 ? (
+                      <div
+                        className={`py-6 text-center text-sm ${
+                          theme === "dark" ? "text-white/50" : "text-gray-500"
+                        }`}
+                      >
+                        No people found for "{searchQuery}"
                       </div>
                     ) : (
-                      <div className="mt-3 space-y-2">
-                        {viewMembers.map((m) => (
-                          <div
-                            key={m}
-                            className={`flex items-center justify-between gap-2 rounded-xl border ${borderColor} ${
-                              theme === "dark"
-                                ? "bg-neutral-950/20"
-                                : "bg-gray-50"
-                            } px-3 py-2`}
-                          >
-                            <div
-                              className={`min-w-0 truncate text-sm ${
+                      <div className="space-y-1">
+                        {filteredPeople.map((name) => {
+                          const checked = checkedPeople.includes(name);
+                          const groupId = personToGroup.get(name);
+                          return (
+                            <label
+                              key={name}
+                              className={cx(
+                                "flex cursor-pointer items-center gap-3 rounded-xl px-2 py-2 transition",
                                 theme === "dark"
-                                  ? "text-white/85"
-                                  : "text-gray-800"
-                              }`}
+                                  ? "hover:bg-white/5"
+                                  : "hover:bg-gray-100",
+                                groupId ? "opacity-80" : ""
+                              )}
                             >
-                              {m}
-                            </div>
-                            <GhostButton
-                              theme={theme}
-                              onClick={() => removeMember(g.id, m)}
-                              className="px-3 py-2"
-                              disabled={isQuarterView}
-                            >
-                              Remove
-                            </GhostButton>
-                          </div>
-                        ))}
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleChecked(name)}
+                                className={cx(
+                                  "h-4 w-4 rounded focus:ring-0",
+                                  theme === "dark"
+                                    ? "border-white/20 bg-white/10 text-white"
+                                    : "border-gray-300 bg-white text-gray-900"
+                                )}
+                              />
+                              <span
+                                className={`flex-1 truncate text-sm ${
+                                  theme === "dark"
+                                    ? "text-white/90"
+                                    : "text-gray-900"
+                                }`}
+                              >
+                                {name}
+                              </span>
+                              {groupId && (
+                                <StatPill theme={theme}>assigned</StatPill>
+                              )}
+                            </label>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
-                  );
-                })}
+                </div>
 
-                {groups.length === 0 && (
-                  <div
-                    className={`rounded-2xl border border-dashed ${
-                      theme === "dark" ? "border-white/15" : "border-gray-300"
-                    } ${bgColor} p-4 text-sm ${
-                      theme === "dark" ? "text-white/60" : "text-gray-600"
-                    }`}
-                  >
-                    Create a group above, then check people and click{" "}
-                    <b>Assign</b>.
-                  </div>
-                )}
-              </div>
+                {/* Groups list */}
+                <div className="mt-4 space-y-3">
+                  {groups.map((g) => {
+                    const viewMembers = getGroupMembersForView(g, activeView);
+                    return (
+                      <div
+                        key={g.id}
+                        className={`rounded-2xl border ${borderColor} ${bgColor} p-3`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold">
+                              {g.name}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              <StatPill theme={theme}>
+                                {g.role} • {viewMembers.length}
+                              </StatPill>
+                              {selectedGroupId === g.id && (
+                                <StatPill theme={theme}>selected</StatPill>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex shrink-0 items-center gap-2">
+                            <GhostButton
+                              theme={theme}
+                              onClick={() => clearGroup(g.id)}
+                              disabled={
+                                isQuarterView || viewMembers.length === 0
+                              }
+                              className="px-3 py-2"
+                            >
+                              Clear
+                            </GhostButton>
+                            <GhostButton
+                              theme={theme}
+                              onClick={() => deleteGroup(g.id)}
+                              className="px-3 py-2"
+                            >
+                              Delete
+                            </GhostButton>
+                          </div>
+                        </div>
+
+                        {viewMembers.length === 0 ? (
+                          <div
+                            className={`mt-3 text-xs ${
+                              theme === "dark"
+                                ? "text-white/50"
+                                : "text-gray-500"
+                            }`}
+                          >
+                            {isQuarterView
+                              ? "No members for this view."
+                              : "No members."}
+                          </div>
+                        ) : (
+                          <div className="mt-3 space-y-2">
+                            {viewMembers.map((m) => (
+                              <div
+                                key={m}
+                                className={`flex items-center justify-between gap-2 rounded-xl border ${borderColor} ${
+                                  theme === "dark"
+                                    ? "bg-neutral-950/20"
+                                    : "bg-gray-50"
+                                } px-3 py-2`}
+                              >
+                                <div
+                                  className={`min-w-0 truncate text-sm ${
+                                    theme === "dark"
+                                      ? "text-white/85"
+                                      : "text-gray-800"
+                                  }`}
+                                >
+                                  {m}
+                                </div>
+                                <GhostButton
+                                  theme={theme}
+                                  onClick={() => removeMember(g.id, m)}
+                                  className="px-3 py-2"
+                                  disabled={isQuarterView}
+                                >
+                                  Remove
+                                </GhostButton>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {groups.length === 0 && (
+                    <div
+                      className={`rounded-2xl border border-dashed ${
+                        theme === "dark" ? "border-white/15" : "border-gray-300"
+                      } ${bgColor} p-4 text-sm ${
+                        theme === "dark" ? "text-white/60" : "text-gray-600"
+                      }`}
+                    >
+                      Create a group above, then check people and click{" "}
+                      <b>Assign</b>.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1952,7 +2188,7 @@ export default function App() {
                       <tr>
                         {tableColumns.map((c, idx) => (
                           <th
-                            key={c}
+                            key={`${c}-${idx}`}
                             className={cx(
                               "sticky top-0 backdrop-blur px-3 py-3 text-left text-xs font-semibold tracking-wide border-b",
                               theme === "dark"
@@ -2039,7 +2275,7 @@ export default function App() {
                             >
                               {tableColumns.map((c, colIdx) => (
                                 <td
-                                  key={c}
+                                  key={`${c}-${colIdx}`}
                                   className={cx(
                                     "px-3 py-3 text-sm border-b",
                                     theme === "dark"
