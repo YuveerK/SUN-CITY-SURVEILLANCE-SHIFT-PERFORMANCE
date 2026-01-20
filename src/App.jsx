@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useCSVReader } from "react-papaparse";
 import * as XLSX from "xlsx-js-style";
+import sunCityLogo from "./assets/sun-city-logo.svg";
 
 const DEFAULT_COLUMN_DEFS = [
   {
@@ -364,7 +365,7 @@ function PrimaryButton({ className = "", theme, ...props }) {
     <button
       {...props}
       className={cx(
-        "inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40",
+        "cursor-pointer inline-flex items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition hover:opacity-90 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40",
         theme === "dark" ? "bg-white text-black" : "bg-gray-900 text-white",
         className
       )}
@@ -424,7 +425,7 @@ function ThemeToggle({ theme, toggleTheme }) {
     <button
       onClick={toggleTheme}
       className={cx(
-        "relative flex h-10 w-20 items-center rounded-full p-1 transition-colors",
+        "relative flex h-10 w-20 cursor-pointer items-center rounded-full p-1 transition-colors hover:opacity-90",
         theme === "dark" ? "bg-gray-700" : "bg-gray-300"
       )}
       aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
@@ -1227,7 +1228,16 @@ export default function App() {
   const borderColor = theme === "dark" ? "border-white/10" : "border-gray-200";
   const bgColor = theme === "dark" ? "bg-white/5" : "bg-white";
   const subtleBg = theme === "dark" ? "bg-white/5" : "bg-gray-100";
-  const headerBg = theme === "dark" ? "bg-neutral-950" : "bg-white";
+  const headerShell =
+    theme === "dark"
+      ? "bg-gradient-to-b from-neutral-950 via-neutral-950 to-black"
+      : "bg-gradient-to-b from-gray-50 via-white to-gray-50";
+  const headerBadge =
+    theme === "dark"
+      ? "bg-white/10 border-white/15"
+      : "bg-white border-gray-200";
+  const brandText =
+    theme === "dark" ? "text-amber-300" : "text-gray-800";
   const tableHeaderBg = theme === "dark" ? "bg-neutral-950/90" : "bg-white/90";
   const stickyBg = theme === "dark" ? "bg-neutral-950/60" : "bg-white/60";
 
@@ -1243,29 +1253,43 @@ export default function App() {
     <div className={`min-h-screen ${themeClasses}`}>
       {/* Top chrome */}
       <div
-        className={`sticky top-0 z-40 w-full border-b ${borderColor} ${headerBg}/80 backdrop-blur`}
+        className={`sticky top-0 z-40 w-full border-b ${borderColor} ${headerShell} backdrop-blur shadow-[0_12px_36px_-32px_rgba(0,0,0,0.55)]`}
       >
         <div className="mx-auto w-full max-w-7xl px-6 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-4">
               <div
-                className={`text-xs font-semibold tracking-widest ${
-                  theme === "dark" ? "text-white/50" : "text-gray-500"
-                }`}
+                className={`flex h-14 w-14 items-center justify-center rounded-2xl border ${headerBadge} shadow-[0_12px_40px_-26px_rgba(0,0,0,0.8)]`}
               >
-                SURVEILLANCE ANALYTICS
+                <img
+                  src={sunCityLogo}
+                  alt="Sun City"
+                  className="h-10 w-10 object-contain"
+                />
               </div>
-              <div className="text-xl font-semibold tracking-tight">
-                Officer Performance — {quarterConfig.quarterName} Loader
-              </div>
-              <div
-                className={`mt-1 max-w-3xl text-sm ${
-                  theme === "dark" ? "text-white/60" : "text-gray-600"
-                }`}
-              >
-                Upload {quarterConfig.months.join("/")} CSVs and switch to{" "}
-                <b>{quarterConfig.quarterName}</b> to view totals across all
-                months. Grouping is set per month and rolls up in the quarter.
+              <div className="min-w-0">
+                <div
+                  className={`text-xs font-semibold tracking-[0.35em] ${
+                    theme === "dark" ? "text-white/50" : "text-gray-500"
+                  }`}
+                >
+                  SUN CITY SURVEILLANCE
+                </div>
+                <div className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                  Officer Performance -{" "}
+                  <span className={brandText}>
+                    {quarterConfig.quarterName} Loader
+                  </span>
+                </div>
+                <div
+                  className={`mt-1 max-w-3xl text-sm ${
+                    theme === "dark" ? "text-white/60" : "text-gray-600"
+                  }`}
+                >
+                  Upload {quarterConfig.months.join("/")} CSVs and switch to{" "}
+                  <b>{quarterConfig.quarterName}</b> to view totals across all
+                  months. Grouping is set per month and rolls up in the quarter.
+                </div>
               </div>
             </div>
 
@@ -1325,7 +1349,7 @@ export default function App() {
                     type="button"
                     onClick={() => setActiveView(v)}
                     className={cx(
-                      "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                      "cursor-pointer rounded-xl px-4 py-2 text-sm font-semibold transition",
                       active
                         ? theme === "dark"
                           ? "bg-white text-black shadow-sm"
@@ -1942,15 +1966,15 @@ export default function App() {
                         }`}
                       />
                       {searchQuery && (
-                        <button
-                          onClick={() => setSearchQuery("")}
-                          className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 ${
-                            theme === "dark"
-                              ? "text-white/60 hover:text-white"
-                              : "text-gray-400 hover:text-gray-600"
-                          }`}
-                          aria-label="Clear search"
-                        >
+                      <button
+                        onClick={() => setSearchQuery("")}
+                        className={`absolute right-2 top-1/2 -translate-y-1/2 p-1 cursor-pointer ${
+                          theme === "dark"
+                            ? "text-white/60 hover:text-white"
+                            : "text-gray-400 hover:text-gray-600"
+                        }`}
+                        aria-label="Clear search"
+                      >
                           ✕
                         </button>
                       )}
@@ -2353,3 +2377,4 @@ export default function App() {
     </div>
   );
 }
+
